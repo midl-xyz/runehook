@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
 use bitcoin::absolute::LockTime;
-use bitcoin::transaction::TxOut;
-use bitcoin::Network;
+use bitcoin::transaction::{TxOut, Version};
+use bitcoin::{Amount, Network};
 use bitcoin::ScriptBuf;
 use bitcoin::Transaction;
 use chainhook_sdk::types::BitcoinTransactionData;
@@ -45,13 +45,13 @@ fn bitcoin_tx_from_chainhook_tx(
             }
         }
         outputs.push(TxOut {
-            value: output.value,
+            value: Amount::from_sat(output.value),
             script_pubkey: script,
         });
     }
     (
         Transaction {
-            version: 2,
+            version: Version::TWO,
             lock_time: LockTime::from_time(block.timestamp).unwrap(),
             // Inputs don't matter for Runestone parsing.
             input: vec![],
