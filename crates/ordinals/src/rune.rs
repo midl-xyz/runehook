@@ -1,3 +1,5 @@
+#![allow(unused_imports)]
+use bitcoin::TestnetVersion;
 use super::*;
 
 #[derive(
@@ -49,7 +51,7 @@ impl Rune {
         Network::Bitcoin => 4,
         Network::Regtest => 0,
         Network::Signet => 0,
-        Network::Testnet => 12,
+        Network::Testnet(_) => 12,
         _ => 0,
       }
   }
@@ -329,19 +331,19 @@ mod tests {
       );
     }
 
-    case(Network::Testnet, 0, "AAAAAAAAAAAAA");
+    case(Network::Testnet(TestnetVersion::V3), 0, "AAAAAAAAAAAAA");
     case(
-      Network::Testnet,
+      Network::Testnet(TestnetVersion::V3),
       SUBSIDY_HALVING_INTERVAL * 12 - 1,
       "AAAAAAAAAAAAA",
     );
     case(
-      Network::Testnet,
+      Network::Testnet(TestnetVersion::V3),
       SUBSIDY_HALVING_INTERVAL * 12,
       "ZZYZXBRKWXVA",
     );
     case(
-      Network::Testnet,
+      Network::Testnet(TestnetVersion::V3),
       SUBSIDY_HALVING_INTERVAL * 12 + 1,
       "ZZXZUDIVTVQA",
     );

@@ -1,3 +1,4 @@
+use bitcoin::constants::MAX_STACK_ELEMENT_SIZE;
 use {super::*, flag::Flag, message::Message, tag::Tag};
 
 mod flag;
@@ -186,7 +187,7 @@ impl Runestone {
       .push_opcode(opcodes::all::OP_RETURN)
       .push_opcode(Runestone::MAGIC_NUMBER);
 
-    for chunk in payload.chunks(MAX_SCRIPT_ELEMENT_SIZE) {
+    for chunk in payload.chunks(MAX_STACK_ELEMENT_SIZE) {
       let push: &script::PushBytes = chunk.try_into().unwrap();
       builder = builder.push_slice(push);
     }

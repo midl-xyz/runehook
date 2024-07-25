@@ -9,7 +9,7 @@ license = "CC0-1.0"
 rust-version = "1.74.0"
 
 [dependencies]
-bitcoin = { version = "0.32.2", features = ["rand", "serde"] }
+bitcoin = { version = "0.33.0-rc1", features = ["rand", "serde"], git = "https://github.com/midl-xyz/rust-bitcoin.git", branch = "testnet4" }
 derive_more = "0.99.17"
 serde = { version = "1.0.137", features = ["derive"] }
 serde_with = "3.7.0"
@@ -20,3 +20,35 @@ pretty_assertions = "1.4.0"
 [dev-dependencies]
 serde_json = { version = "1.0.81", features = ["preserve_order"] }
 pretty_assertions = "1.2.1"
+
+[patch.crates-io.bitcoin-addresses]
+git = "https://github.com/midl-xyz/rust-bitcoin.git"
+branch = "testnet4"
+
+[patch.crates-io.base58ck]
+git = "https://github.com/midl-xyz/rust-bitcoin.git"
+branch = "testnet4"
+
+[patch.crates-io.bitcoin]
+git = "https://github.com/midl-xyz/rust-bitcoin.git"
+branch = "testnet4"
+
+[patch.crates-io.bitcoin_hashes]
+git = "https://github.com/midl-xyz/rust-bitcoin.git"
+branch = "testnet4"
+
+[patch.crates-io.bitcoin-internals]
+git = "https://github.com/midl-xyz/rust-bitcoin.git"
+branch = "testnet4"
+
+[patch.crates-io.bitcoin-io]
+git = "https://github.com/midl-xyz/rust-bitcoin.git"
+branch = "testnet4"
+
+[patch.crates-io.bitcoin-primitives]
+git = "https://github.com/midl-xyz/rust-bitcoin.git"
+branch = "testnet4"
+
+[patch.crates-io.bitcoin-units]
+git = "https://github.com/midl-xyz/rust-bitcoin.git"
+branch = "testnet4"

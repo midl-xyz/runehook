@@ -1,7 +1,7 @@
 pub mod file;
 pub mod generator;
 
-use bitcoin::Network;
+use bitcoin::{Network, TestnetVersion};
 use chainhook_sdk::observer::EventObserverConfig;
 
 use chainhook_sdk::types::BitcoinNetwork;
@@ -79,7 +79,7 @@ impl Config {
         match self.event_observer.bitcoin_network {
             BitcoinNetwork::Mainnet => Network::Bitcoin,
             BitcoinNetwork::Regtest => Network::Regtest,
-            BitcoinNetwork::Testnet => Network::Testnet,
+            BitcoinNetwork::Testnet => Network::Testnet(TestnetVersion::V4),
             BitcoinNetwork::Signet => Network::Signet,
         }
     }

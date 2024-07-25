@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use bitcoin::absolute::LockTime;
 use bitcoin::transaction::{TxOut, Version};
-use bitcoin::{Amount, Network};
+use bitcoin::{Amount, Network, TestnetVersion};
 use bitcoin::ScriptBuf;
 use bitcoin::Transaction;
 use chainhook_sdk::types::BitcoinTransactionData;
@@ -20,7 +20,8 @@ use super::cache::index_cache::IndexCache;
 pub fn get_rune_genesis_block_height(network: Network) -> u64 {
     match network {
         Network::Bitcoin => 840_000,
-        Network::Testnet => todo!(),
+        Network::Testnet(TestnetVersion::V3) => 2_539_948,
+        Network::Testnet(TestnetVersion::V4) => 1,
         Network::Signet => todo!(),
         Network::Regtest => todo!(),
         _ => todo!(),

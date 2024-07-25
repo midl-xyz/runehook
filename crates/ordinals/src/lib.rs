@@ -5,7 +5,7 @@ use {
   bitcoin::{
     consensus::{Decodable, Encodable},
     constants::{
-      DIFFCHANGE_INTERVAL, MAX_SCRIPT_ELEMENT_SIZE, SUBSIDY_HALVING_INTERVAL,
+      DIFFCHANGE_INTERVAL, SUBSIDY_HALVING_INTERVAL,
     },
     Network,
     opcodes,

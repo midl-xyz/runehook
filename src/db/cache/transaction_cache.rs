@@ -1,3 +1,4 @@
+#![allow(unused_imports)]
 use bitcoin::ScriptBuf;
 use chainhook_sdk::utils::Context;
 use maplit::hashmap;
