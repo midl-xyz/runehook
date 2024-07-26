@@ -1,5 +1,5 @@
 use std::sync::mpsc::channel;
-
+use bitcoin::{Network, TestnetVersion};
 use crate::bitcoind::bitcoind_get_block_height;
 use crate::config::Config;
 use crate::db::cache::index_cache::IndexCache;
@@ -14,6 +14,8 @@ use chainhook_sdk::{
     utils::Context,
 };
 use crossbeam_channel::select;
+
+const TESTNET_V4: Network = Network::Testnet(TestnetVersion::V4);
 
 pub async fn start_service(config: &Config, ctx: &Context) -> Result<(), String> {
     {
@@ -39,6 +41,33 @@ pub async fn start_service(config: &Config, ctx: &Context) -> Result<(), String>
                     chain_tip + 1,
                     bitcoind_chain_tip
                 );
+
+                if config.get_bitcoin_network().eq(&TESTNET_V4) {
+                    let prev_chain_tip = chain_tip;
+
+                    scan_blocks(
+                        ((chain_tip + 1)..=bitcoind_chain_tip).collect(),
+                        config,
+                        &mut pg_client,
+                        &mut index_cache,
+                        ctx,
+                    )
+                        .await?;
+
+                    let chain_tip = pg_get_block_height(&mut pg_client, ctx)
+                        .await
+                        .unwrap();
+
+                    if prev_chain_tip == chain_tip {
+                        try_info!(
+                            ctx,
+                            "Chain tip did not changed. Assume that {} is latest transaction block. It is fine for testnet v4. We are good to go.",
+                            chain_tip
+                        );
+                        break;
+                    }
+                }
+
                 scan_blocks(
                     ((chain_tip + 1)..=bitcoind_chain_tip).collect(),
                     config,
