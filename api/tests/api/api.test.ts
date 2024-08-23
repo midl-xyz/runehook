@@ -147,5 +147,31 @@ describe('Endpoints', () => {
       expect(response.statusCode).toBe(200);
       expect(response.json()).toStrictEqual(expected);
     });
+    
+        test("validate output success", async () => {
+            const expected = {is_valid: true};
+            const txid = ledgerEntry.tx_id;
+            const response = await fastify.inject({
+              method: 'GET',
+              url: '/runes/v1/transactions/' + txid + '/is-valid-ouptut',
+              query: {address: `${ledgerEntry.address}`, vout : `${ledgerEntry.output}`},
+            });
+
+            expect(response.statusCode).toBe(200);
+            expect(response.json()).toStrictEqual(expected);
+          });
+    
+        test("validate output, no match", async () => {
+          const expected = {is_valid: false};
+          const txid = ledgerEntry.tx_id;
+          const response = await fastify.inject({
+            method: 'GET',
+            url: '/runes/v1/transactions/' + txid + '/is-valid-ouptut',
+            query: {address: `${ledgerEntry.address}`, vout : `${42}`},
+          });
+
+          expect(response.statusCode).toBe(200);
+          expect(response.json()).toStrictEqual(expected);
+        });
   });
 });

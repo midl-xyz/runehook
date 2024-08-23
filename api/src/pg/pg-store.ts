@@ -25,6 +25,7 @@ import {
   RuneSpacedNameSchemaCType,
   TransactionId,
   RuneNumberSchemaCType,
+  Vout,
 } from '../api/schemas';
 
 function runeFilter(sql: PgSqlClient, etching: string, prefix?: string): PgSqlQuery {
@@ -277,5 +278,21 @@ export class PgStore extends BasePgStore {
       total: results[0]?.total ?? 0,
       results,
     };
+  }
+
+  async outputExists(
+    txId: TransactionId,
+    address: Address,
+    vout: Vout, 
+  ): Promise<boolean> {
+    const result = await this.sql<{exists : boolean}[]>`
+    SELECT EXISTS (
+      SELECT 1 FROM ledger
+      WHERE tx_id = ${txId}
+        AND address = ${address}
+        AND output = ${vout ?? this.sql`NULL`}
+    )
+    `;
+    return result[0]?.exists;
   }
 }
