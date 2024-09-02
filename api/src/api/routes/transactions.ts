@@ -53,7 +53,7 @@ export const TransactionRoutes: FastifyPluginCallback<
       schema: {
         operationId: 'isValidOutput',
         summary: 'Validates output',
-        description: 'Validates the output of the given transaction for certain address',
+        description: 'Validates the output of the given transaction for certain address, returning UTXO if the output is valid.',
         tags: ['Output'],
         params: Type.Object({
           tx_id: TransactionIdSchema,
@@ -64,14 +64,17 @@ export const TransactionRoutes: FastifyPluginCallback<
           vout: VoutSchema,
         }),
         response: {
-          200: ValidOutputResponseSchema,
+          200: PaginatedResponse(ActivityResponseSchema, 'Paginated activity response'),
         },
       },
     },
     async (request, reply) => {
-      const results = await fastify.db.outputExists(request.params.tx_id, request.query.address, request.query.vout);
+      const results = await fastify.db.getUtxoOfOutput(request.params.tx_id, request.query.address, request.query.vout);
       await reply.send({
-        is_valid: results,
+        limit: 1,
+        offset: 0,
+        total: results.length,
+        results: results.map(r => parseActivityResponse(r))
       });
     }
   );

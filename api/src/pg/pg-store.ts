@@ -280,19 +280,20 @@ export class PgStore extends BasePgStore {
     };
   }
 
-  async outputExists(
+  async getUtxoOfOutput(
     txId: TransactionId,
     address: Address,
     vout: Vout, 
-  ): Promise<boolean> {
-    const result = await this.sql<{exists : boolean}[]>`
-    SELECT EXISTS (
-      SELECT 1 FROM ledger
-      WHERE tx_id = ${txId}
-        AND address = ${address}
-        AND output = ${vout ?? this.sql`NULL`}
-    )
+  ): Promise<DbItemWithRune<DbLedgerEntry>[]> {
+
+    const result = await this.sql<DbItemWithRune<DbLedgerEntry>[]>`
+      SELECT l.*, r.name, r.number, r.spaced_name, r.divisibility
+      FROM ledger AS l
+      INNER JOIN runes AS r ON r.id = l.rune_id
+      WHERE l.tx_id = ${txId}
+        AND l.address = ${address}
+        AND l.output = ${vout}
     `;
-    return result[0]?.exists;
+    return result;
   }
 }

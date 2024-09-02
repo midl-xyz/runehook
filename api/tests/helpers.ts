@@ -87,7 +87,7 @@ export function sampleRune(id: string, name?: string): DbRune {
     block_height: '840000',
     tx_index: 1,
     tx_id: '2bb85f4b004be6da54f766c17c1e855187327112c231ef2ff35ebad0ea67c69e',
-    divisibility: 2,
+    divisibility: 0,
     premine: '1000',
     symbol: 'ᚠ',
     cenotaph: true,
@@ -165,6 +165,7 @@ export async function insertSupplyChange(
   });
 }
 
+// inserting not all Fields to the DB
 export async function insertRune(db: PgStore, payload: DbRune): Promise<void> {
   await db.sqlWriteTransaction(async sql => {
     const {
