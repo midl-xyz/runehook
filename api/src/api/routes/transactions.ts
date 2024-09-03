@@ -48,7 +48,7 @@ export const TransactionRoutes: FastifyPluginCallback<
   );
 
   fastify.get(
-    '/transactions/:tx_id/is-valid-ouptut',
+    '/transactions/:tx_id/valid-ouptut',
     {
       schema: {
         operationId: 'isValidOutput',

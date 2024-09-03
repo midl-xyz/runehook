@@ -171,7 +171,7 @@ describe('Endpoints', () => {
             const txid = ledgerEntry.tx_id;
             const response = await fastify.inject({
               method: 'GET',
-              url: '/runes/v1/transactions/' + txid + '/is-valid-ouptut',
+              url: '/runes/v1/transactions/' + txid + '/valid-ouptut',
               query: {address: `${ledgerEntry.address}`, vout : `${ledgerEntry.output}`},
             });
 
@@ -189,7 +189,7 @@ describe('Endpoints', () => {
           const txid = ledgerEntry.tx_id;
           const response = await fastify.inject({
             method: 'GET',
-            url: '/runes/v1/transactions/' + txid + '/is-valid-ouptut',
+            url: '/runes/v1/transactions/' + txid + '/valid-ouptut',
             query: {address: `${ledgerEntry.address}`, vout : `${42}`},
           });
 
