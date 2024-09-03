@@ -161,7 +161,7 @@ describe('Endpoints', () => {
               total_operations: 1,
             };
             const expected = {
-              limit: 1,
+              limit: 20,
               offset: 0,
               results: [
                 parseActivityResponse(expectedDbRes)
@@ -181,7 +181,7 @@ describe('Endpoints', () => {
     
         test("validate output, no match", async () => {
           const expected = {
-            limit: 1,
+            limit: 20,
             offset: 0,
             results: [],
             total: 0,

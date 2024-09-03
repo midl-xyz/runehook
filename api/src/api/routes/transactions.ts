@@ -62,6 +62,8 @@ export const TransactionRoutes: FastifyPluginCallback<
         querystring: Type.Object({
           address: AddressSchema,
           vout: VoutSchema,
+          offset: Optional(OffsetSchema),
+          limit: Optional(LimitSchema),
         }),
         response: {
           200: PaginatedResponse(ActivityResponseSchema, 'Paginated activity response'),
@@ -69,10 +71,12 @@ export const TransactionRoutes: FastifyPluginCallback<
       },
     },
     async (request, reply) => {
+      const offset = request.query.offset ?? 0;
+      const limit = request.query.limit ?? 20;
       const results = await fastify.db.getUtxoOfOutput(request.params.tx_id, request.query.address, request.query.vout);
       await reply.send({
-        limit: 1,
-        offset: 0,
+        limit: limit,
+        offset: offset,
         total: results.length,
         results: results.map(r => parseActivityResponse(r))
       });

@@ -287,7 +287,7 @@ export class PgStore extends BasePgStore {
   ): Promise<DbItemWithRune<DbLedgerEntry>[]> {
 
     const result = await this.sql<DbItemWithRune<DbLedgerEntry>[]>`
-      SELECT l.*, r.name, r.number, r.spaced_name, r.divisibility
+      SELECT DISTINCT ON (rune_id) l.*, r.name, r.number, r.spaced_name, r.divisibility
       FROM ledger AS l
       INNER JOIN runes AS r ON r.id = l.rune_id
       WHERE l.tx_id = ${txId}
