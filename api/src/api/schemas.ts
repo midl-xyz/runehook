@@ -384,3 +384,19 @@ export const NotFoundResponse = Type.Object(
   },
   { title: 'Not Found Response' }
 );
+
+
+export const VoutSchema = Type.Integer({
+    examples: [100],
+    title: 'Output index',
+    description: 'Bitcoin transaction output index',
+});
+
+export type Vout = Static<typeof VoutSchema>;
+
+export const ValidOutputResponseSchema = Type.Object({
+      is_valid: Type.Boolean({
+        title: 'Output is valid',
+        description: 'Combination of tx_idx, address and vout exists in recorded history',
+      }),
+});

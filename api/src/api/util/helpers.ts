@@ -82,7 +82,7 @@ export function parseActivityResponse(entry: DbItemWithRune<DbLedgerEntry>): Act
       tx_index: entry.tx_index,
       tx_id: entry.tx_id,
       vout: entry.output ?? undefined,
-      output: entry.output ? `${entry.tx_id}:${entry.output}` : undefined,
+      output: entry.output !== null && entry.output !== undefined ? `${entry.tx_id}:${entry.output}` : undefined,
       timestamp: entry.timestamp,
     },
   };
