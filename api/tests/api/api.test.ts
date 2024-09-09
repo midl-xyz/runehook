@@ -1,5 +1,6 @@
 import { ENV } from '../../src/env';
 import { PgStore } from '../../src/pg/pg-store';
+import { parseActivityResponse } from '../../src/api/util/helpers';
 import {
   dropDatabase,
   insertDbLedgerEntry,
@@ -11,6 +12,7 @@ import {
   insertSupplyChange,
   sampleLedgerEntry,
 } from '../helpers';
+import { DbItemWithRune, DbLedgerEntry } from '../../src/pg/types';
 
 describe('Endpoints', () => {
   let db: PgStore;
@@ -147,5 +149,52 @@ describe('Endpoints', () => {
       expect(response.statusCode).toBe(200);
       expect(response.json()).toStrictEqual(expected);
     });
+    
+        test("validate output success", async () => {
+            const expectedDbRes: DbItemWithRune<DbLedgerEntry>  = 
+            {
+              name: rune.name, 
+              number: rune.number, 
+              spaced_name: rune.spaced_name, 
+              divisibility: rune.divisibility,
+              ...ledgerEntry,
+              total_operations: 1,
+            };
+            const expected = {
+              limit: 20,
+              offset: 0,
+              results: [
+                parseActivityResponse(expectedDbRes)
+              ],
+              total: 1,
+            };
+            const txid = ledgerEntry.tx_id;
+            const response = await fastify.inject({
+              method: 'GET',
+              url: '/runes/v1/transactions/' + txid + '/valid-ouptut',
+              query: {address: `${ledgerEntry.address}`, vout : `${ledgerEntry.output}`},
+            });
+
+            expect(response.statusCode).toBe(200);
+            expect(response.json()).toStrictEqual(expected);
+          });
+    
+        test("validate output, no match", async () => {
+          const expected = {
+            limit: 20,
+            offset: 0,
+            results: [],
+            total: 0,
+          };
+          const txid = ledgerEntry.tx_id;
+          const response = await fastify.inject({
+            method: 'GET',
+            url: '/runes/v1/transactions/' + txid + '/valid-ouptut',
+            query: {address: `${ledgerEntry.address}`, vout : `${42}`},
+          });
+
+          expect(response.statusCode).toBe(200);
+          expect(response.json()).toStrictEqual(expected);
+        });
   });
 });
