@@ -1,19 +1,20 @@
-use std::sync::mpsc::channel;
-use bitcoin::{Network, TestnetVersion};
 use crate::bitcoind::bitcoind_get_block_height;
 use crate::config::Config;
 use crate::db::cache::index_cache::IndexCache;
 use crate::db::index::{get_rune_genesis_block_height, index_block, roll_back_block};
 use crate::db::{pg_connect, pg_get_block_height};
+use crate::mempool::set_up_mempool_sidecar_runloop;
 use crate::scan::bitcoin::scan_blocks;
 use crate::{try_error, try_info};
+use bitcoin::{Network, TestnetVersion};
 use chainhook_sdk::observer::BitcoinBlockDataCached;
 use chainhook_sdk::types::BlockIdentifier;
 use chainhook_sdk::{
     observer::{start_event_observer, ObserverEvent, ObserverSidecar},
     utils::Context,
 };
-use crossbeam_channel::select;
+use crossbeam_channel::{select, Sender};
+use std::sync::mpsc::channel;
 
 const TESTNET_V4: Network = Network::Testnet(TestnetVersion::V4);
 
@@ -52,11 +53,9 @@ pub async fn start_service(config: &Config, ctx: &Context) -> Result<(), String>
                         &mut index_cache,
                         ctx,
                     )
-                        .await?;
+                    .await?;
 
-                    let chain_tip = pg_get_block_height(&mut pg_client, ctx)
-                        .await
-                        .unwrap();
+                    let chain_tip = pg_get_block_height(&mut pg_client, ctx).await.unwrap();
 
                     if prev_chain_tip == chain_tip {
                         try_info!(
@@ -147,10 +146,17 @@ pub async fn set_up_observer_sidecar_runloop(
     let ctx = ctx.clone();
     let config = config.clone();
 
+    // Moved it out of the spawned thread to get rune_cache
+    let mut index_cache =
+        IndexCache::new(&config, &mut pg_connect(&config, false, &ctx).await, &ctx).await;
+    // Channel to handle transactions included into the blocks
+    let transaction_id_tx =
+        set_up_mempool_sidecar_runloop(&config, index_cache.rune_cache.clone(), &ctx)
+            .await
+            .unwrap();
+
     let _ = hiro_system_kit::thread_named("Observer Sidecar Runloop").spawn(move || {
         hiro_system_kit::nestable_block_on(async {
-            let mut index_cache =
-                IndexCache::new(&config, &mut pg_connect(&config, false, &ctx).await, &ctx).await;
             loop {
                 select! {
                     recv(block_mutator_in_rx) -> msg => {
@@ -159,6 +165,7 @@ pub async fn set_up_observer_sidecar_runloop(
                                 &mut index_cache,
                                 &mut blocks_to_mutate,
                                 &blocks_ids_to_rollback,
+                                Some(&transaction_id_tx),
                                 &config,
                                 &ctx,
                             ).await;
@@ -182,6 +189,7 @@ pub async fn chainhook_sidecar_mutate_blocks(
     index_cache: &mut IndexCache,
     blocks_to_mutate: &mut Vec<BitcoinBlockDataCached>,
     block_ids_to_rollback: &Vec<BlockIdentifier>,
+    transaction_id_tx: Option<&Sender<String>>,
     config: &Config,
     ctx: &Context,
 ) {
@@ -192,7 +200,14 @@ pub async fn chainhook_sidecar_mutate_blocks(
     }
     for cache in blocks_to_mutate.iter_mut() {
         if !cache.processed_by_sidecar {
-            index_block(&mut pg_client, index_cache, &mut cache.block, ctx).await;
+            index_block(
+                &mut pg_client,
+                index_cache,
+                &mut cache.block,
+                transaction_id_tx,
+                ctx,
+            )
+            .await;
             cache.processed_by_sidecar = true;
         }
     }

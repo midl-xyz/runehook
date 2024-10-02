@@ -2,11 +2,12 @@ use std::collections::HashMap;
 
 use bitcoin::absolute::LockTime;
 use bitcoin::transaction::{TxOut, Version};
-use bitcoin::{Amount, Network, TestnetVersion};
 use bitcoin::ScriptBuf;
 use bitcoin::Transaction;
+use bitcoin::{Amount, Network, TestnetVersion};
 use chainhook_sdk::types::BitcoinTransactionData;
 use chainhook_sdk::{types::BitcoinBlockData, utils::Context};
+use crossbeam_channel::Sender;
 use ordinals::Artifact;
 use ordinals::Runestone;
 use tokio_postgres::Client;
@@ -69,6 +70,7 @@ pub async fn index_block(
     pg_client: &mut Client,
     index_cache: &mut IndexCache,
     block: &mut BitcoinBlockData,
+    transaction_id_tx: Option<&Sender<String>>,
     ctx: &Context,
 ) {
     let stopwatch = std::time::Instant::now();
@@ -86,6 +88,12 @@ pub async fn index_block(
             bitcoin_tx_from_chainhook_tx(block, tx);
         let tx_index = tx.metadata.index;
         let tx_id = &tx.transaction_identifier.hash;
+        // Currenly to notify the mempool service that the transaction
+        // could be deleted from the mempool storage
+        if let Some(transaction_id_tx) = transaction_id_tx {
+            let _ = transaction_id_tx.send(tx_id.clone());
+        }
+
         let location = TransactionLocation {
             network: index_cache.network,
             block_hash: block_hash.clone(),

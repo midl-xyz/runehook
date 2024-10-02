@@ -18,6 +18,7 @@ use chainhook_sdk::bitcoincore_rpc::{self, Auth, RpcApi};
 
 use chainhook_sdk::types::BitcoinBlockSignaling;
 use chainhook_sdk::utils::Context;
+use crossbeam_channel::{select, Receiver, Sender};
 use tokio_postgres::types::ToSql;
 use tokio_postgres::{Error, Transaction};
 
@@ -88,28 +89,31 @@ impl DBMempoolLedgerEntry {
     }
 }
 
+#[derive(Clone)]
 pub struct ExtendedContext {
     ctx: Context,
     rune_cache: RuneCacheArcMut,
+    // the use of dashmap might be more appropriate heere
+    mempool_cache: MempoolCacheArcRw,
     network: Network,
 }
 
 pub async fn set_up_mempool_sidecar_runloop(
     config: &Config,
     rune_cache: RuneCacheArcMut,
-
     ctx: &Context,
-) -> Result<(), ()> {
+) -> Result<Sender<String>, ()> {
     let network = config.get_bitcoin_network();
 
     let extended_ctx = ExtendedContext {
         ctx: ctx.clone(),
-        network,
         rune_cache: rune_cache.clone(),
+        mempool_cache: Arc::new(RwLock::new(HashSet::new())),
+        network,
     };
 
     // Cache storing currently added mempool transactions
-    let mem_cache = Arc::new(RwLock::new(HashSet::new()));
+    let mem_cache: Arc<RwLock<HashSet<String>>> = Arc::new(RwLock::new(HashSet::new()));
     mem_cache.write().unwrap().insert("some".to_string());
 
     if let Err(e) = scan_mempool(&config, &extended_ctx).await {
@@ -117,14 +121,62 @@ pub async fn set_up_mempool_sidecar_runloop(
     }
 
     let config_cln = config.clone();
+    let extended_ctx_cln = extended_ctx.clone();
     let _ =
         hiro_system_kit::thread_named("Transactions Observer Sidecar Runloop").spawn(move || {
             hiro_system_kit::nestable_block_on(async {
-                start_zeromq_runloop(&config_cln, &extended_ctx).await
+                start_zeromq_runloop(&config_cln, &extended_ctx_cln).await
             });
         });
 
-    Ok(())
+    let config_cln = config.clone();
+    let extended_ctx_cln = extended_ctx.clone();
+    let (transaction_id_tx, transaction_id_rx) = crossbeam_channel::unbounded();
+    let _ =
+        hiro_system_kit::thread_named("Transactions Observer Sidecar Runloop").spawn(move || {
+            hiro_system_kit::nestable_block_on(async {
+                remove_escaped_transactions(transaction_id_rx, &config_cln, &extended_ctx_cln)
+                    .await;
+            });
+        });
+
+    Ok(transaction_id_tx)
+}
+
+async fn remove_escaped_transactions(
+    transaction_id_rx: Receiver<String>,
+    config: &Config,
+    extended_ctx: &ExtendedContext,
+) {
+    let mut pg_client = pg_connect(config, false, &extended_ctx.ctx).await;
+    loop {
+        select! {
+            recv(transaction_id_rx) -> msg => {
+                if let Ok(tx_id) = msg {
+                    let removed =  extended_ctx
+                        .mempool_cache
+                        .write()
+                        .and_then(|mut hs| Ok(hs.remove(&tx_id)));
+                    match removed {
+                        Ok(true) => {
+                            let mut db_tx = pg_client
+                                .transaction()
+                                .await
+                                .expect("Unable to begin bitcoin tx processing pg transaction");
+                            pg_remove_mempool_tx(&tx_id, &mut db_tx, &extended_ctx.ctx).await;
+                            db_tx
+                                .commit()
+                                .await
+                                .expect("Unable to commit pg transaction");
+                        },
+                        Ok(false) => {}
+                        Err(e) => {try_error!(extended_ctx.ctx, "Error while trying to remove a TX ID from Mempool cache: {}", e.to_string());
+                        },
+                    }
+                }
+            }
+        }
+    }
 }
 
 // get all tx from the current state of mempool using bitcoin rpc
@@ -148,9 +200,22 @@ pub async fn scan_mempool(
     let mut ledger_entries = Vec::new();
 
     for tx_id in rpc.get_raw_mempool()? {
+        let err = extended_ctx
+            .mempool_cache
+            .write()
+            .and_then(|mut hs| Ok(hs.insert(tx_id.to_string())));
+        if let Err(e) = err {
+            try_error!(
+                extended_ctx.ctx,
+                "RPC Failed to write to mempool cache: {}",
+                e
+            );
+        }
+
         let tx: Option<bitcoin::Transaction> = rpc.get_by_id(&tx_id).ok().into();
         if let Some(tx) = tx {
-            let new_entries = parse_mempool_tx(tx, &mut db_tx, extended_ctx).await;
+            let new_entries =
+                parse_mempool_tx(tx, tx_id.to_string(), &mut db_tx, extended_ctx).await;
             ledger_entries.extend(new_entries);
         }
     }
@@ -188,6 +253,7 @@ fn new_zmq_socket() -> Socket {
 }
 
 type RuneCacheArcMut = Arc<Mutex<LruCache<RuneId, DbRune>>>;
+type MempoolCacheArcRw = Arc<RwLock<HashSet<String>>>;
 
 pub async fn start_zeromq_runloop(config: &Config, extended_ctx: &ExtendedContext) {
     let BitcoinBlockSignaling::ZeroMQ(ref bitcoind_zmq_url) =
@@ -237,12 +303,32 @@ pub async fn start_zeromq_runloop(config: &Config, extended_ctx: &ExtendedContex
             }
         };
 
+        // Might be a case, when TX is in the cache but not yet in Postgres
+        // and when the request to delete TX comes it can't be executed
+        // Hashmap with flags that indicates processing step might be needed
+        let tx_id = tx.compute_txid().to_string();
+        let insertion_res = extended_ctx
+            .mempool_cache
+            .write()
+            .and_then(|mut hs| Ok(hs.insert(tx_id.clone())));
+        match insertion_res {
+            Ok(true) => {}
+            Ok(false) => continue,
+            Err(e) => {
+                try_error!(
+                    extended_ctx.ctx,
+                    "ZMQ Failed to write to mempool cache: {}",
+                    e
+                );
+            }
+        }
+
         let mut db_tx = pg_client
             .transaction()
             .await
             .expect("Unable to begin bitcoin tx processing pg transaction");
         // db_tx is used here to retrive data from postgres
-        let ledger_entries = parse_mempool_tx(tx, &mut db_tx, extended_ctx).await;
+        let ledger_entries = parse_mempool_tx(tx, tx_id, &mut db_tx, extended_ctx).await;
         // Commit to db
         let _ =
             pg_insert_mempool_ledger_entries(&ledger_entries, &mut db_tx, &extended_ctx.ctx).await;
@@ -256,10 +342,10 @@ pub async fn start_zeromq_runloop(config: &Config, extended_ctx: &ExtendedContex
 
 async fn parse_mempool_tx(
     tx: bitcoin::Transaction,
+    tx_id: String,
     db_tx: &mut Transaction<'_>,
     extended_ctx: &ExtendedContext,
 ) -> Vec<DBMempoolLedgerEntry> {
-    let tx_id = tx.compute_txid().to_string();
     let mut ledger_entries = Vec::new();
 
     let mut output_pointer = None;
@@ -429,6 +515,23 @@ fn allocate_remaining_balances(
     results
 }
 
+async fn pg_remove_mempool_tx(tx_id: &String, db_tx: &mut Transaction<'_>, ctx: &Context) {
+    // Maybe its better idea to keep a batch of tx to delete
+    match db_tx
+        .query(
+            "DELETE FROM mempool_ledger WHERE transaction_id = $1",
+            &[tx_id],
+        )
+        .await
+    {
+        Ok(_) => {}
+        Err(e) => {
+            try_error!(ctx, "Error inserting mempool_ledger entries: {:?}", e);
+            process::exit(1);
+        }
+    };
+}
+
 pub async fn pg_insert_mempool_ledger_entries(
     rows: &Vec<DBMempoolLedgerEntry>,
     db_tx: &mut Transaction<'_>,
@@ -460,7 +563,7 @@ pub async fn pg_insert_mempool_ledger_entries(
         match db_tx
             .query(
                 &format!(
-                    "INSERT INTO ledger
+                    "INSERT INTO mempool_ledger
                     (rune_id, event_index, tx_id, output, address, receiver_address, amount,
                     operation)
                     VALUES {}",
@@ -472,7 +575,7 @@ pub async fn pg_insert_mempool_ledger_entries(
         {
             Ok(_) => {}
             Err(e) => {
-                try_error!(ctx, "Error inserting ledger entries: {:?}", e);
+                try_error!(ctx, "Error inserting mempool_ledger entries: {:?}", e);
                 process::exit(1);
             }
         };

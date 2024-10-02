@@ -37,7 +37,7 @@ pub struct IndexCache {
     /// Number to be assigned to the next rune etching.
     next_rune_number: u32,
     /// LRU cache for runes. Uses Mutex as each request to LRU changes its state.
-    rune_cache: Arc<Mutex<LruCache<RuneId, DbRune>>>,
+    pub rune_cache: Arc<Mutex<LruCache<RuneId, DbRune>>>,
     /// LRU cache for total mints for runes.
     rune_total_mints_cache: LruCache<RuneId, u128>,
     /// LRU cache for outputs with rune balances.
