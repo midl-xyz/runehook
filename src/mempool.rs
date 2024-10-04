@@ -116,10 +116,13 @@ pub async fn set_up_mempool_sidecar_runloop(
     let mem_cache: Arc<RwLock<HashSet<String>>> = Arc::new(RwLock::new(HashSet::new()));
     mem_cache.write().unwrap().insert("some".to_string());
 
+    try_info!(ctx, "Scanning mempool for txs");
     if let Err(e) = scan_mempool(&config, &extended_ctx).await {
         try_error!(ctx, "Failed to scan mempool with rpc: {}", e.to_string());
     }
+    try_info!(ctx, "Finished scanning mempool for txs.");
 
+    try_info!(ctx, "Starting to watch mempool updates.");
     let config_cln = config.clone();
     let extended_ctx_cln = extended_ctx.clone();
     let _ =
