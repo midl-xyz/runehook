@@ -355,11 +355,9 @@ async fn parse_mempool_tx(
     let mut next_event_index: u32 = 0;
 
     let tx_total_outputs = tx.output.len() as u32;
-    // might be reused for minting
-    let mut tx_etching = None;
 
     if let Some(artifact) = Runestone::decipher(&tx) {
-        let eligible_outputs = collect_eligible_outputs(&tx);
+        let mut eligible_outputs = collect_eligible_outputs(&tx);
         let mut input_runes_balances =
             collect_input_rune_balances_pg(&tx.input, db_tx, &extended_ctx.ctx).await;
 
@@ -371,51 +369,18 @@ async fn parse_mempool_tx(
                 }
                 // rune_id is 0:0 as they haven't been included in any block yet
                 // RuneID is block_hight:tx_index_in_block
-                // no timestamp
-                if let Some(etching) = runestone.etching {
-                    // apply_etching
-                    ledger_entries.push(DBMempoolLedgerEntry::new_mempool_entry_with_idx_incr(
-                        None,
-                        UNINCLUDED_RUNE_ID,
-                        None,
-                        None,
-                        None,
-                        DbLedgerOperation::Etching,
-                        &tx_id,
-                        &mut next_event_index,
-                    ));
-                    tx_etching = Some(etching);
-                }
-
-                if let Some(mint_rune_id) = runestone.mint {
-                    // CHECK mint rules not checked
-                    // apply_mint
-                    let terms_amount = get_terms_amount_pg_cached(
-                        tx_etching,
-                        &mint_rune_id,
-                        extended_ctx.rune_cache.clone(),
-                        db_tx,
-                        &extended_ctx.ctx,
-                    )
-                    .await;
-                    ledger_entries.push(DBMempoolLedgerEntry::new_mempool_entry_with_idx_incr(
-                        terms_amount.map(|i| i.0),
-                        mint_rune_id,
-                        None,
-                        None,
-                        None,
-                        DbLedgerOperation::Mint,
-                        &tx_id,
-                        &mut next_event_index,
-                    ));
-                    next_event_index += 1;
-                }
 
                 for edict in runestone.edicts.iter() {
+                    // Not supporting TXs with uincluded runde edicts
+                    if edict.id == UNINCLUDED_RUNE_ID {
+                        ledger_entries.clear();
+                        input_runes_balances.clear();
+                        eligible_outputs.clear();
+                        break;
+                    }
                     // apply_edict
                     ledger_entries.extend(collect_edicts(
                         edict,
-                        &tx_etching,
                         &mut input_runes_balances,
                         &eligible_outputs,
                         &mut next_event_index,
@@ -433,36 +398,10 @@ async fn parse_mempool_tx(
                     &mut next_event_index,
                 ));
 
-                if let Some(etching) = cenotaph.etching {
+                if let Some(_etching) = cenotaph.etching {
                     // apply_cenotaph_etching
                     ledger_entries.push(apply_cenotaph_etching(
                         &UNINCLUDED_RUNE_ID,
-                        &tx_id,
-                        &mut next_event_index,
-                    ));
-
-                    let mut cached_etching = Etching::default();
-                    cached_etching.rune = Some(etching);
-                    tx_etching = Some(Etching::default());
-                }
-                if let Some(mint_rune_id) = cenotaph.mint {
-                    // CHECK is it possible to check if rune is mintable
-                    // apply_cenotaph_mint
-                    let terms_amount = get_terms_amount_pg_cached(
-                        tx_etching,
-                        &mint_rune_id,
-                        extended_ctx.rune_cache.clone(),
-                        db_tx,
-                        &extended_ctx.ctx,
-                    )
-                    .await;
-                    ledger_entries.push(DBMempoolLedgerEntry::new_mempool_entry_with_idx_incr(
-                        terms_amount.map(|i| i.0),
-                        mint_rune_id.clone(),
-                        None,
-                        None,
-                        None,
-                        DbLedgerOperation::Burn,
                         &tx_id,
                         &mut next_event_index,
                     ));
@@ -628,7 +567,6 @@ fn burn_input(
 
 fn collect_edicts(
     edict: &Edict,
-    tx_etching: &Option<Etching>,
     input_runes_balances: &mut HashMap<RuneId, Vec<InputRuneBalance>>,
     eligible_outputs: &HashMap<u32, ScriptBuf>,
     mut next_event_index: &mut u32,
@@ -637,13 +575,7 @@ fn collect_edicts(
     ctx: &ExtendedContext,
 ) -> Vec<DBMempoolLedgerEntry> {
     let rune_id = if edict.id.block == 0 && edict.id.tx == 0 {
-        // edicting from the rune that was etched in the current transaction
-        let Some(_etching) = tx_etching.as_ref() else {
-            try_warn!(ctx.ctx, "Attempted edict for nonexistent rune 0:0");
-            return vec![];
-        };
-        // we don't know neither the actul block where it will be included nor the tx index in the block
-        UNINCLUDED_RUNE_ID
+        return vec![];
     } else {
         edict.id
     };
