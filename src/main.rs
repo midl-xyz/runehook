@@ -10,6 +10,7 @@ pub mod bitcoind;
 pub mod cli;
 pub mod config;
 pub mod db;
+pub mod mempool;
 pub mod scan;
 pub mod service;
 
