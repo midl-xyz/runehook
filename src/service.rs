@@ -146,17 +146,13 @@ pub async fn set_up_observer_sidecar_runloop(
     let ctx = ctx.clone();
     let config = config.clone();
 
-    // Moved it out of the spawned thread to get rune_cache
-    let mut index_cache =
-        IndexCache::new(&config, &mut pg_connect(&config, false, &ctx).await, &ctx).await;
     // Channel to handle transactions included into the blocks
-    let transaction_id_tx =
-        set_up_mempool_sidecar_runloop(&config, index_cache.rune_cache.clone(), &ctx)
-            .await
-            .unwrap();
+    let transaction_id_tx = set_up_mempool_sidecar_runloop(&config, &ctx).await.unwrap();
 
     let _ = hiro_system_kit::thread_named("Observer Sidecar Runloop").spawn(move || {
         hiro_system_kit::nestable_block_on(async {
+            let mut index_cache =
+                IndexCache::new(&config, &mut pg_connect(&config, false, &ctx).await, &ctx).await;
             loop {
                 select! {
                     recv(block_mutator_in_rx) -> msg => {

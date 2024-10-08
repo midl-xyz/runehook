@@ -1,9 +1,4 @@
-use std::{
-    collections::HashMap,
-    num::NonZeroUsize,
-    str::FromStr,
-    sync::{Arc, Mutex},
-};
+use std::{collections::HashMap, num::NonZeroUsize, str::FromStr};
 
 use bitcoin::{Network, ScriptBuf};
 use chainhook_sdk::{types::bitcoin::TxIn, utils::Context};
@@ -36,8 +31,8 @@ pub struct IndexCache {
     pub network: Network,
     /// Number to be assigned to the next rune etching.
     next_rune_number: u32,
-    /// LRU cache for runes. Uses Mutex as each request to LRU changes its state.
-    pub rune_cache: Arc<Mutex<LruCache<RuneId, DbRune>>>,
+    /// LRU cache for runes.
+    rune_cache: LruCache<RuneId, DbRune>,
     /// LRU cache for total mints for runes.
     rune_total_mints_cache: LruCache<RuneId, u128>,
     /// LRU cache for outputs with rune balances.
@@ -58,7 +53,7 @@ impl IndexCache {
         IndexCache {
             network,
             next_rune_number: pg_get_max_rune_number(pg_client, ctx).await + 1,
-            rune_cache: Arc::new(Mutex::new(LruCache::new(cap))),
+            rune_cache: LruCache::new(cap),
             rune_total_mints_cache: LruCache::new(cap),
             output_cache: LruCache::new(cap),
             block_output_cache: HashMap::new(),
@@ -175,7 +170,7 @@ impl IndexCache {
             self.tx_cache.location
         );
         self.db_cache.runes.push(db_rune.clone());
-        self.rune_cache.lock().unwrap().put(rune_id, db_rune);
+        self.rune_cache.put(rune_id, db_rune);
         self.add_ledger_entries_to_db_cache(&vec![entry]);
         self.next_rune_number += 1;
     }
@@ -197,7 +192,7 @@ impl IndexCache {
             self.tx_cache.location
         );
         self.db_cache.runes.push(db_rune.clone());
-        self.rune_cache.lock().unwrap().put(rune_id, db_rune);
+        self.rune_cache.put(rune_id, db_rune);
         self.add_ledger_entries_to_db_cache(&vec![entry]);
         self.next_rune_number += 1;
     }
@@ -299,7 +294,7 @@ impl IndexCache {
         if rune_id.block == 0 && rune_id.tx == 0 {
             return self.tx_cache.etching.clone();
         }
-        if let Some(cached_rune) = self.rune_cache.lock().unwrap().get(&rune_id) {
+        if let Some(cached_rune) = self.rune_cache.get(&rune_id) {
             return Some(cached_rune.clone());
         }
         // Cache miss, look in DB.
@@ -307,10 +302,7 @@ impl IndexCache {
         let Some(db_rune) = pg_get_rune_by_id(rune_id, db_tx, ctx).await else {
             return None;
         };
-        self.rune_cache
-            .lock()
-            .unwrap()
-            .put(rune_id.clone(), db_rune.clone());
+        self.rune_cache.put(rune_id.clone(), db_rune.clone());
         return Some(db_rune);
     }
 

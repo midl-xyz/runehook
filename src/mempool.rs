@@ -1,15 +1,14 @@
 use std::collections::{HashMap, HashSet};
 use std::process;
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, RwLock};
 
 use crate::config::Config;
 use crate::db::cache::input_rune_balance::InputRuneBalance;
 
 use crate::db::models::db_ledger_operation::DbLedgerOperation;
-use crate::db::models::db_rune::DbRune;
 use crate::db::types::pg_bigint_u32::PgBigIntU32;
 use crate::db::types::pg_numeric_u128::PgNumericU128;
-use crate::db::{pg_connect, pg_get_input_rune_balances, pg_get_rune_by_id};
+use crate::db::{pg_connect, pg_get_input_rune_balances};
 use crate::{try_debug, try_error, try_info, try_warn};
 use bitcoin::consensus::deserialize;
 use bitcoin::{Address, Network, ScriptBuf, TxIn};
@@ -20,15 +19,10 @@ use chainhook_sdk::types::BitcoinBlockSignaling;
 use chainhook_sdk::utils::Context;
 use crossbeam_channel::{select, Receiver, Sender};
 use tokio_postgres::types::ToSql;
-use tokio_postgres::{Error, Transaction};
+use tokio_postgres::{Client, Error, Transaction};
 
-use lru::LruCache;
-use ordinals::{Artifact, Edict, Etching, RuneId, Runestone};
+use ordinals::{Artifact, Edict, RuneId, Runestone};
 use zmq::Socket;
-
-// Todo:
-// 1) Connect to the block scanning part
-//    by providing a map or a channel with tx update to remove included txs from postgres
 
 const UNINCLUDED_RUNE_ID: RuneId = RuneId { block: 0, tx: 0 };
 
@@ -92,35 +86,35 @@ impl DBMempoolLedgerEntry {
 #[derive(Clone)]
 pub struct ExtendedContext {
     ctx: Context,
-    rune_cache: RuneCacheArcMut,
-    // the use of dashmap might be more appropriate heere
+    // Cache storing currently added mempool transactions
+    // Use of dashmap might be more appropriate heere
     mempool_cache: MempoolCacheArcRw,
     network: Network,
 }
 
 pub async fn set_up_mempool_sidecar_runloop(
     config: &Config,
-    rune_cache: RuneCacheArcMut,
     ctx: &Context,
 ) -> Result<Sender<String>, ()> {
     let network = config.get_bitcoin_network();
 
     let extended_ctx = ExtendedContext {
         ctx: ctx.clone(),
-        rune_cache: rune_cache.clone(),
         mempool_cache: Arc::new(RwLock::new(HashSet::new())),
         network,
     };
 
-    // Cache storing currently added mempool transactions
-    let mem_cache: Arc<RwLock<HashSet<String>>> = Arc::new(RwLock::new(HashSet::new()));
-    mem_cache.write().unwrap().insert("some".to_string());
+    // actualize mempool cache from postgres
+    {
+        let mut pg_client = pg_connect(config, false, &extended_ctx.ctx).await;
+        pg_actualize_mempool_cache(&extended_ctx, &mut pg_client).await;
 
-    try_info!(ctx, "Scanning mempool for txs");
-    if let Err(e) = scan_mempool(&config, &extended_ctx).await {
-        try_error!(ctx, "Failed to scan mempool with rpc: {}", e.to_string());
+        try_info!(ctx, "Scanning mempool for txs");
+        if let Err(e) = scan_mempool(&config, &extended_ctx, &mut pg_client).await {
+            try_error!(ctx, "Failed to scan mempool with rpc: {}", e.to_string());
+        }
+        try_info!(ctx, "Finished scanning mempool for txs.");
     }
-    try_info!(ctx, "Finished scanning mempool for txs.");
 
     try_info!(ctx, "Starting to watch mempool updates.");
     let config_cln = config.clone();
@@ -128,7 +122,7 @@ pub async fn set_up_mempool_sidecar_runloop(
     let _ =
         hiro_system_kit::thread_named("Transactions Observer Sidecar Runloop").spawn(move || {
             hiro_system_kit::nestable_block_on(async {
-                start_zeromq_runloop(&config_cln, &extended_ctx_cln).await
+                start_zeromq_runloop(&config_cln, &extended_ctx_cln).await;
             });
         });
 
@@ -144,91 +138,6 @@ pub async fn set_up_mempool_sidecar_runloop(
         });
 
     Ok(transaction_id_tx)
-}
-
-async fn remove_escaped_transactions(
-    transaction_id_rx: Receiver<String>,
-    config: &Config,
-    extended_ctx: &ExtendedContext,
-) {
-    let mut pg_client = pg_connect(config, false, &extended_ctx.ctx).await;
-    loop {
-        select! {
-            recv(transaction_id_rx) -> msg => {
-                if let Ok(tx_id) = msg {
-                    let removed =  extended_ctx
-                        .mempool_cache
-                        .write()
-                        .and_then(|mut hs| Ok(hs.remove(&tx_id)));
-                    match removed {
-                        Ok(true) => {
-                            let mut db_tx = pg_client
-                                .transaction()
-                                .await
-                                .expect("Unable to begin bitcoin tx processing pg transaction");
-                            pg_remove_mempool_tx(&tx_id, &mut db_tx, &extended_ctx.ctx).await;
-                            db_tx
-                                .commit()
-                                .await
-                                .expect("Unable to commit pg transaction");
-                        },
-                        Ok(false) => {}
-                        Err(e) => {try_error!(extended_ctx.ctx, "Error while trying to remove a TX ID from Mempool cache: {}", e.to_string());
-                        },
-                    }
-                }
-            }
-        }
-    }
-}
-
-// get all tx from the current state of mempool using bitcoin rpc
-pub async fn scan_mempool(
-    config: &Config,
-    extended_ctx: &ExtendedContext,
-) -> Result<(), bitcoincore_rpc::Error> {
-    let mut pg_client = pg_connect(config, false, &extended_ctx.ctx).await;
-
-    let rpc_auth = Auth::UserPass(
-        config.event_observer.bitcoind_rpc_username.clone(),
-        config.event_observer.bitcoind_rpc_password.clone(),
-    );
-    let rpc = new_rpc_client(&config.event_observer.bitcoind_rpc_url, rpc_auth)
-        .expect("Failed to sart an rpc client.");
-
-    let mut db_tx = pg_client
-        .transaction()
-        .await
-        .expect("Unable to begin bitcoin tx processing pg transaction");
-    let mut ledger_entries = Vec::new();
-
-    for tx_id in rpc.get_raw_mempool()? {
-        let err = extended_ctx
-            .mempool_cache
-            .write()
-            .and_then(|mut hs| Ok(hs.insert(tx_id.to_string())));
-        if let Err(e) = err {
-            try_error!(
-                extended_ctx.ctx,
-                "RPC Failed to write to mempool cache: {}",
-                e
-            );
-        }
-
-        let tx: Option<bitcoin::Transaction> = rpc.get_by_id(&tx_id).ok().into();
-        if let Some(tx) = tx {
-            let new_entries =
-                parse_mempool_tx(tx, tx_id.to_string(), &mut db_tx, extended_ctx).await;
-            ledger_entries.extend(new_entries);
-        }
-    }
-    let _ = pg_insert_mempool_ledger_entries(&ledger_entries, &mut db_tx, &extended_ctx.ctx).await;
-    db_tx
-        .commit()
-        .await
-        .expect("Unable to commit pg transaction");
-
-    Ok(())
 }
 
 fn new_rpc_client(
@@ -255,7 +164,6 @@ fn new_zmq_socket() -> Socket {
     socket
 }
 
-type RuneCacheArcMut = Arc<Mutex<LruCache<RuneId, DbRune>>>;
 type MempoolCacheArcRw = Arc<RwLock<HashSet<String>>>;
 
 pub async fn start_zeromq_runloop(config: &Config, extended_ctx: &ExtendedContext) {
@@ -343,6 +251,118 @@ pub async fn start_zeromq_runloop(config: &Config, extended_ctx: &ExtendedContex
     }
 }
 
+// get all tx from the current state of mempool using bitcoin rpc
+pub async fn scan_mempool(
+    config: &Config,
+    extended_ctx: &ExtendedContext,
+    pg_client: &mut Client,
+) -> Result<(), bitcoincore_rpc::Error> {
+    let rpc_auth = Auth::UserPass(
+        config.event_observer.bitcoind_rpc_username.clone(),
+        config.event_observer.bitcoind_rpc_password.clone(),
+    );
+    let rpc = new_rpc_client(&config.event_observer.bitcoind_rpc_url, rpc_auth)
+        .expect("Failed to sart an rpc client.");
+
+    let mut db_tx = pg_client
+        .transaction()
+        .await
+        .expect("Unable to begin bitcoin tx processing pg transaction");
+    let mut ledger_entries = Vec::new();
+
+    let txs = rpc.get_raw_mempool()?;
+    let txs_hs: HashSet<String> = txs
+        .clone()
+        .into_iter()
+        .map(|tx_id| tx_id.to_string())
+        .collect();
+    // removing transaction ids that do not represent current mempool state
+    let tx_to_delete = extended_ctx
+        .mempool_cache
+        .read()
+        .and_then(|hs| {
+            let difference: Vec<String> = hs.difference(&txs_hs).cloned().collect();
+            Ok(difference)
+        })
+        .expect("Faielde to get read lock on memcache");
+
+    pg_remove_mempool_tx(&tx_to_delete, &mut db_tx, &extended_ctx.ctx).await;
+
+    for tx_id in txs.into_iter() {
+        try_debug!(
+            extended_ctx.ctx,
+            "Got new tx_id from scanning mempool {}",
+            tx_id
+        );
+        let err = extended_ctx
+            .mempool_cache
+            .write()
+            .and_then(|mut hs| Ok(hs.insert(tx_id.to_string())));
+        match err {
+            Err(e) => {
+                try_error!(
+                    extended_ctx.ctx,
+                    "RPC Failed to write to mempool cache: {}",
+                    e
+                );
+            }
+            Ok(true) => {}
+            // Already stored, can skip
+            Ok(false) => continue,
+        }
+
+        let tx: Option<bitcoin::Transaction> = rpc.get_by_id(&tx_id).ok().into();
+        if let Some(tx) = tx {
+            let new_entries =
+                parse_mempool_tx(tx, tx_id.to_string(), &mut db_tx, extended_ctx).await;
+            ledger_entries.extend(new_entries);
+        }
+    }
+    let _ = pg_insert_mempool_ledger_entries(&ledger_entries, &mut db_tx, &extended_ctx.ctx).await;
+    db_tx
+        .commit()
+        .await
+        .expect("Unable to commit pg transaction");
+
+    Ok(())
+}
+
+async fn remove_escaped_transactions(
+    transaction_id_rx: Receiver<String>,
+    config: &Config,
+    extended_ctx: &ExtendedContext,
+) {
+    let mut pg_client = pg_connect(config, false, &extended_ctx.ctx).await;
+    loop {
+        select! {
+            recv(transaction_id_rx) -> msg => {
+                if let Ok(tx_id) = msg {
+                    let removed =  extended_ctx
+                        .mempool_cache
+                        .write()
+                        .and_then(|mut hs| Ok(hs.remove(&tx_id)));
+                    match removed {
+                        Ok(true) => {
+                            let mut db_tx = pg_client
+                                .transaction()
+                                .await
+                                .expect("Unable to begin bitcoin tx processing pg transaction");
+                            pg_remove_mempool_tx(&[tx_id], &mut db_tx, &extended_ctx.ctx).await;
+                            db_tx
+                                .commit()
+                                .await
+                                .expect("Unable to commit pg transaction");
+                        },
+                        Ok(false) => {}
+                        Err(e) => {try_error!(extended_ctx.ctx, "Error while trying to remove a TX ID from Mempool cache: {}", e.to_string());
+                        },
+                    }
+                }
+            }
+        }
+    }
+}
+
 async fn parse_mempool_tx(
     tx: bitcoin::Transaction,
     tx_id: String,
@@ -355,6 +375,7 @@ async fn parse_mempool_tx(
     let mut next_event_index: u32 = 0;
 
     let tx_total_outputs = tx.output.len() as u32;
+    try_debug!(extended_ctx.ctx, "New tx to parse {}", tx_id);
 
     if let Some(artifact) = Runestone::decipher(&tx) {
         let mut eligible_outputs = collect_eligible_outputs(&tx);
@@ -363,6 +384,7 @@ async fn parse_mempool_tx(
 
         match artifact {
             Artifact::Runestone(runestone) => {
+                try_debug!(extended_ctx.ctx, "The tx contains Runestone");
                 // apply_runestone
                 if let Some(new_pointer) = runestone.pointer {
                     output_pointer = Some(new_pointer);
@@ -457,18 +479,26 @@ fn allocate_remaining_balances(
     results
 }
 
-async fn pg_remove_mempool_tx(tx_id: &String, db_tx: &mut Transaction<'_>, ctx: &Context) {
+async fn pg_remove_mempool_tx(tx_ids: &[String], db_tx: &mut Transaction<'_>, ctx: &Context) {
+    let mut arg_str = String::new();
+    let mut params: Vec<&(dyn ToSql + Sync)> = vec![];
+    for i in 1..=tx_ids.len() {
+        arg_str.push_str(format!("${},", i).as_str());
+    }
+    // removing last comma
+    arg_str.pop();
+    for tx_id in tx_ids {
+        params.push(tx_id);
+    }
     // Maybe its better idea to keep a batch of tx to delete
-    match db_tx
-        .query(
-            "DELETE FROM mempool_ledger WHERE transaction_id = $1",
-            &[tx_id],
-        )
-        .await
-    {
+    let query_str = format!(
+        "DELETE FROM mempool_ledger WHERE transaction_id IN ({})",
+        arg_str
+    );
+    match db_tx.query(&query_str, &params).await {
         Ok(_) => {}
         Err(e) => {
-            try_error!(ctx, "Error inserting mempool_ledger entries: {:?}", e);
+            try_error!(ctx, "Error deleting mempool_ledger entries: {:?}", e);
             process::exit(1);
         }
     };
@@ -479,50 +509,66 @@ pub async fn pg_insert_mempool_ledger_entries(
     db_tx: &mut Transaction<'_>,
     ctx: &Context,
 ) -> Result<bool, Error> {
-    for chunk in rows.chunks(500) {
-        let mut arg_num = 1;
-        let mut arg_str = String::new();
-        let mut params: Vec<&(dyn ToSql + Sync)> = vec![];
-        let total_arg_cols = 8;
-        for row in chunk.iter() {
-            arg_str.push_str("(");
-            for i in 0..total_arg_cols {
-                arg_str.push_str(format!("${},", arg_num + i).as_str());
-            }
-            arg_str.pop();
-            arg_str.push_str("),");
-            arg_num += total_arg_cols;
-            params.push(&row.rune_id);
-            params.push(&row.event_index);
-            params.push(&row.tx_id);
-            params.push(&row.output);
-            params.push(&row.address);
-            params.push(&row.receiver_address);
-            params.push(&row.amount);
-            params.push(&row.operation);
+    if rows.is_empty() {
+        return Ok(false);
+    }
+    let mut arg_num = 1;
+    let mut arg_str = String::new();
+    let mut params: Vec<&(dyn ToSql + Sync)> = vec![];
+    let total_arg_cols = 8;
+    for row in rows.iter() {
+        arg_str.push_str("(");
+        for i in 0..total_arg_cols {
+            arg_str.push_str(format!("${},", arg_num + i).as_str());
         }
         arg_str.pop();
-        match db_tx
-            .query(
-                &format!(
-                    "INSERT INTO mempool_ledger
+        arg_str.push_str("),");
+        arg_num += total_arg_cols;
+        params.push(&row.rune_id);
+        params.push(&row.event_index);
+        params.push(&row.tx_id);
+        params.push(&row.output);
+        params.push(&row.address);
+        params.push(&row.receiver_address);
+        params.push(&row.amount);
+        params.push(&row.operation);
+    }
+    arg_str.pop();
+    match db_tx
+        .query(
+            &format!(
+                "INSERT INTO mempool_ledger
                     (rune_id, event_index, tx_id, output, address, receiver_address, amount,
                     operation)
                     VALUES {}",
-                    arg_str
-                ),
-                &params,
-            )
-            .await
-        {
-            Ok(_) => {}
-            Err(e) => {
-                try_error!(ctx, "Error inserting mempool_ledger entries: {:?}", e);
-                process::exit(1);
-            }
-        };
-    }
+                arg_str
+            ),
+            &params,
+        )
+        .await
+    {
+        Ok(_) => {}
+        Err(e) => {
+            try_error!(ctx, "Error inserting mempool_ledger entries: {:?}", e);
+            process::exit(1);
+        }
+    };
+
     Ok(true)
+}
+
+async fn pg_actualize_mempool_cache(ctx: &ExtendedContext, pg_client: &mut Client) {
+    let rows = pg_client
+        .query("SELECT tx_id FROM mempool_ledger;", &[])
+        .await
+        .expect("error getting tx_ids of the mempool");
+    for row in rows.iter() {
+        let tx_id = row.get("tx_id");
+        ctx.mempool_cache
+            .write()
+            .and_then(|mut hs| Ok(hs.insert(tx_id)))
+            .expect("Failed to write to mempool cache");
+    }
 }
 
 fn apply_cenotaph_etching(
@@ -859,27 +905,4 @@ fn collect_eligible_outputs(tx: &bitcoin::Transaction) -> HashMap<u32, ScriptBuf
         }
     }
     eligible_outputs
-}
-
-async fn get_terms_amount_pg_cached(
-    etching: Option<Etching>,
-    rune_id: &RuneId,
-    rune_cache: RuneCacheArcMut,
-    db_tx: &mut Transaction<'_>,
-    ctx: &Context,
-) -> Option<PgNumericU128> {
-    // Id 0:0 is used to mean the rune being etched in this transaction, if any.
-    if rune_id.block == 0 && rune_id.tx == 0 {
-        return etching.and_then(|e| e.terms.and_then(|t| t.amount).map(PgNumericU128));
-    }
-    if let Some(cached_rune) = rune_cache.lock().unwrap().get(&rune_id) {
-        return cached_rune.terms_amount;
-    }
-    // Cache miss, look in DB.
-    // might be optimized by just requesting terms amount
-    let Some(db_rune) = pg_get_rune_by_id(rune_id, db_tx, ctx).await else {
-        return None;
-    };
-
-    return db_rune.terms_amount;
 }
