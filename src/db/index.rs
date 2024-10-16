@@ -2,9 +2,9 @@ use std::collections::HashMap;
 
 use bitcoin::absolute::LockTime;
 use bitcoin::transaction::{TxOut, Version};
-use bitcoin::{Amount, Network, TestnetVersion};
 use bitcoin::ScriptBuf;
 use bitcoin::Transaction;
+use bitcoin::{Amount, Network, TestnetVersion};
 use chainhook_sdk::types::BitcoinTransactionData;
 use chainhook_sdk::{types::BitcoinBlockData, utils::Context};
 use ordinals::Artifact;
@@ -12,7 +12,7 @@ use ordinals::Runestone;
 use tokio_postgres::Client;
 
 use crate::db::cache::transaction_location::TransactionLocation;
-use crate::db::pg_roll_back_block;
+use crate::db::{pg_roll_back_block, pg_update_block_height};
 use crate::try_info;
 
 use super::cache::index_cache::IndexCache;
@@ -80,6 +80,10 @@ pub async fn index_block(
         .transaction()
         .await
         .expect("Unable to begin block processing pg transaction");
+
+    // Keep track of the last scanned block height
+    let _ = pg_update_block_height(block_height, &mut db_tx, ctx).await;
+
     index_cache.reset_max_rune_number(&mut db_tx, ctx).await;
     for tx in block.transactions.iter() {
         let (transaction, eligible_outputs, first_eligible_output, total_outputs) =

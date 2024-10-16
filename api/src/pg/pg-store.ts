@@ -9,6 +9,7 @@ import { ENV } from '../env';
 import {
   DbAmountChange,
   DbBalance,
+  DbBlockHeight,
   DbCountedQueryResult,
   DbItemWithRune,
   DbLedgerEntry,
@@ -311,5 +312,13 @@ export class PgStore extends BasePgStore {
         AND l.rune_id = ${runeId}
     `;
     return result;
+  }
+
+  async getLastScannedBlockHeigt(): Promise<DbBlockHeight> {
+    const result = await this.sql<DbBlockHeight[]>`
+        SELECT last_scanned_height FROM block_height LIMIT 1
+    `;
+    // there would be at least one value inserted by default
+    return result[0];
   }
 }

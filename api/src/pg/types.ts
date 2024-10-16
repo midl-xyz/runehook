@@ -71,3 +71,7 @@ export type DbAmountChange = {
   amount: string;
   divisibility: number;
 };
+
+export type DbBlockHeight = {
+  last_scanned_height: number;
+};

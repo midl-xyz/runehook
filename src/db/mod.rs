@@ -521,6 +521,26 @@ pub async fn pg_get_input_rune_balances(
     results
 }
 
+pub async fn pg_update_block_height(
+    new_block_height: u64,
+    db_tx: &mut Transaction<'_>,
+    ctx: &Context,
+) -> Result<(), Error> {
+    match db_tx
+        .query_one(
+            "UPDATE block_height SET last_scanned_height = $1;",
+            &[&PgNumericU64(new_block_height)],
+        )
+        .await
+    {
+        Ok(_) => {}
+        Err(e) => {
+            try_error!(ctx, "Error updating block height: {:?}", e);
+        }
+    };
+    Ok(())
+}
+
 #[cfg(test)]
 pub async fn pg_test_client(run_migrations: bool, ctx: &Context) -> Client {
     let (mut client, connection) =

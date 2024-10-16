@@ -426,3 +426,9 @@ export const AmountOutputResponseSchema = Type.Object({
 });
 
 export type AmountOutputResponse = Static<typeof AmountOutputResponseSchema>;
+
+export const BlockHeightResponseSchema = Type.Object({
+  last_scanned_height: Type.Number(),
+});
+
+export type BlockHeightResponseSchema = Static<typeof BlockHeightResponseSchema>;
