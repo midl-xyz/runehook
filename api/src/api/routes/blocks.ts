@@ -2,7 +2,13 @@ import { TypeBoxTypeProvider } from '@fastify/type-provider-typebox';
 import { Type } from '@sinclair/typebox';
 import { FastifyPluginCallback } from 'fastify';
 import { Server } from 'http';
-import { LimitSchema, OffsetSchema, ActivityResponseSchema, BlockSchema } from '../schemas';
+import {
+  LimitSchema,
+  OffsetSchema,
+  ActivityResponseSchema,
+  BlockSchema,
+  BlockHeightResponseSchema,
+} from '../schemas';
 import { parseActivityResponse } from '../util/helpers';
 import { Optional, PaginatedResponse } from '@hirosystems/api-toolkit';
 import { handleCache } from '../util/cache';
@@ -43,6 +49,27 @@ export const BlockRoutes: FastifyPluginCallback<
         offset,
         total: results.total,
         results: results.results.map(r => parseActivityResponse(r)),
+      });
+    }
+  );
+
+  fastify.get(
+    '/blocks/height',
+    {
+      schema: {
+        operationId: 'getBlockHeight',
+        summary: 'Last scanned block height',
+        description: 'Retrieves a the height of the last scanned block',
+        tags: ['Status'],
+        response: {
+          200: BlockHeightResponseSchema,
+        },
+      },
+    },
+    async (_request, reply) => {
+      const results = await fastify.db.getLastScannedBlockHeigt();
+      await reply.send({
+        last_scanned_height: results.last_scanned_height,
       });
     }
   );
