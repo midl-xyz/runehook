@@ -129,7 +129,7 @@ pub async fn scan_bitcoin_chainstate_via_rpc_using_predicate(
             standardize_bitcoin_block(raw_block, &config.event_observer.bitcoin_network, ctx)
                 .unwrap();
 
-        index_block(pg_client, index_cache, &mut block, ctx).await;
+        index_block(pg_client, index_cache, &mut block, None, ctx).await;
 
         match process_block_with_predicates(
             block,
