@@ -7,7 +7,9 @@ import {
 } from '@hirosystems/api-toolkit';
 import { ENV } from '../env';
 import {
+  DbAmountChange,
   DbBalance,
+  DbBlockHeight,
   DbCountedQueryResult,
   DbItemWithRune,
   DbLedgerEntry,
@@ -283,9 +285,8 @@ export class PgStore extends BasePgStore {
   async getUtxoOfOutput(
     txId: TransactionId,
     address: Address,
-    vout: Vout, 
+    vout: Vout
   ): Promise<DbItemWithRune<DbLedgerEntry>[]> {
-
     const result = await this.sql<DbItemWithRune<DbLedgerEntry>[]>`
       SELECT DISTINCT ON (rune_id) l.*, r.name, r.number, r.spaced_name, r.divisibility
       FROM ledger AS l
@@ -295,5 +296,29 @@ export class PgStore extends BasePgStore {
         AND l.output = ${vout}
     `;
     return result;
+  }
+
+  async getTxIdOutputRuneAmount(
+    txId: TransactionId,
+    vout: Vout,
+    runeId: Rune
+  ): Promise<DbAmountChange[]> {
+    const result = await this.sql<DbAmountChange[]>`
+      SELECT l.address, l.amount, r.divisibility
+      FROM ledger AS l
+      INNER JOIN runes AS r ON r.id = l.rune_id
+      WHERE l.tx_id = ${txId}
+        AND l.output = ${vout}
+        AND l.rune_id = ${runeId}
+    `;
+    return result;
+  }
+
+  async getLastScannedBlockHeigt(): Promise<DbBlockHeight> {
+    const result = await this.sql<DbBlockHeight[]>`
+        SELECT last_scanned_height FROM block_height LIMIT 1
+    `;
+    // there would be at least one value inserted by default
+    return result[0];
   }
 }

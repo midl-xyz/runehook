@@ -385,18 +385,50 @@ export const NotFoundResponse = Type.Object(
   { title: 'Not Found Response' }
 );
 
-
 export const VoutSchema = Type.Integer({
-    examples: [100],
-    title: 'Output index',
-    description: 'Bitcoin transaction output index',
+  examples: [100],
+  title: 'Output index',
+  description: 'Bitcoin transaction output index',
 });
 
 export type Vout = Static<typeof VoutSchema>;
 
 export const ValidOutputResponseSchema = Type.Object({
-      is_valid: Type.Boolean({
-        title: 'Output is valid',
-        description: 'Combination of tx_idx, address and vout exists in recorded history',
-      }),
+  is_valid: Type.Boolean({
+    title: 'Output is valid',
+    description: 'Combination of tx_idx, address and vout exists in recorded history',
+  }),
 });
+
+const AddressAmountSchema = Type.Object({
+  address: Optional(
+    Type.String({
+      examples: ['bc1q7jd477wc5s88hsvenr0ddtatsw282hfjzg59wz'],
+      title: 'Address',
+      description: 'Bitcoin address which operates this amount of runes',
+    })
+  ),
+  amount: Type.String({
+    examples: ['11000000000'],
+    title: 'Amount',
+    description: 'Rune amount relevat to this activity',
+  }),
+});
+
+export const AmountOutputResponseSchema = Type.Object({
+  rune_id: RuneIdResponseSchema,
+  address_amount: Type.Array(AddressAmountSchema),
+  total_amount: Type.String({
+    examples: ['11000000000'],
+    title: 'Amount',
+    description: 'Rune amount relevat to UTXO',
+  }),
+});
+
+export type AmountOutputResponse = Static<typeof AmountOutputResponseSchema>;
+
+export const BlockHeightResponseSchema = Type.Object({
+  last_scanned_height: Type.Number(),
+});
+
+export type BlockHeightResponseSchema = Static<typeof BlockHeightResponseSchema>;

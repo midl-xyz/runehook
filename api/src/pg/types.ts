@@ -65,3 +65,13 @@ export type DbBalance = {
   balance: string;
   total_operations: number;
 };
+
+export type DbAmountChange = {
+  address: string | null;
+  amount: string;
+  divisibility: number;
+};
+
+export type DbBlockHeight = {
+  last_scanned_height: number;
+};

@@ -1,6 +1,18 @@
 import BigNumber from 'bignumber.js';
-import { DbBalance, DbItemWithRune, DbLedgerEntry, DbRuneWithChainTip } from '../../pg/types';
-import { EtchingResponse, ActivityResponse, BalanceResponse } from '../schemas';
+import {
+  DbAmountChange,
+  DbBalance,
+  DbItemWithRune,
+  DbLedgerEntry,
+  DbRuneWithChainTip,
+} from '../../pg/types';
+import {
+  EtchingResponse,
+  ActivityResponse,
+  BalanceResponse,
+  AmountOutputResponse,
+  Rune,
+} from '../schemas';
 
 function divisibility(num: string | BigNumber, decimals: number): string {
   return new BigNumber(num).shiftedBy(-1 * decimals).toFixed(decimals);
@@ -82,7 +94,10 @@ export function parseActivityResponse(entry: DbItemWithRune<DbLedgerEntry>): Act
       tx_index: entry.tx_index,
       tx_id: entry.tx_id,
       vout: entry.output ?? undefined,
-      output: entry.output !== null && entry.output !== undefined ? `${entry.tx_id}:${entry.output}` : undefined,
+      output:
+        entry.output !== null && entry.output !== undefined
+          ? `${entry.tx_id}:${entry.output}`
+          : undefined,
       timestamp: entry.timestamp,
     },
   };
@@ -98,5 +113,22 @@ export function parseBalanceResponse(item: DbItemWithRune<DbBalance>): BalanceRe
     },
     address: item.address,
     balance: divisibility(item.balance, item.divisibility),
+  };
+}
+
+export function parseAmountResponse(runeId: Rune, entries: DbAmountChange[]): AmountOutputResponse {
+  // we have at least one entry
+  const big_num_total = entries
+    .map(obj => BigNumber(obj.amount))
+    .reduce((total, amount) => total.plus(amount), BigNumber(0));
+  const total_amount = divisibility(big_num_total, entries[0].divisibility);
+
+  return {
+    rune_id: runeId,
+    address_amount: entries.map(obj => {
+      const address = obj.address === null ? undefined : obj.address;
+      return { address, amount: obj.amount };
+    }),
+    total_amount: total_amount,
   };
 }
