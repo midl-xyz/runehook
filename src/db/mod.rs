@@ -527,13 +527,15 @@ pub async fn pg_update_block_height(
     ctx: &Context,
 ) -> Result<(), Error> {
     match db_tx
-        .query_one(
+        .query(
             "UPDATE block_height SET last_scanned_height = $1;",
             &[&PgNumericU64(new_block_height)],
         )
         .await
     {
-        Ok(_) => {}
+        Ok(updated_rows) => {
+            assert_eq!(updated_rows.len(), 0);
+        }
         Err(e) => {
             try_error!(ctx, "Error updating block height: {:?}", e);
         }
