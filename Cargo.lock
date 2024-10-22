@@ -403,7 +403,7 @@ dependencies = [
 [[package]]
 name = "bitcoincore-rpc"
 version = "0.18.0"
-source = "git+https://github.com/midl-xyz/rust-bitcoincore-rpc.git?branch=testnet-v4#94d0bc9cd407b84090e357cdc0db67a4c1bbeae1"
+source = "git+https://github.com/midl-xyz/rust-bitcoincore-rpc.git?branch=testnet-v4#9cdca87f276559568764d36697fcf746fcf269bd"
 dependencies = [
  "bitcoincore-rpc-json",
  "jsonrpc",
@@ -415,7 +415,7 @@ dependencies = [
 [[package]]
 name = "bitcoincore-rpc-json"
 version = "0.18.0"
-source = "git+https://github.com/midl-xyz/rust-bitcoincore-rpc.git?branch=testnet-v4#94d0bc9cd407b84090e357cdc0db67a4c1bbeae1"
+source = "git+https://github.com/midl-xyz/rust-bitcoincore-rpc.git?branch=testnet-v4#9cdca87f276559568764d36697fcf746fcf269bd"
 dependencies = [
  "base58ck",
  "bitcoin 0.33.0-rc1",
