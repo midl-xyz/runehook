@@ -6,8 +6,8 @@ use crate::{try_error, try_info};
 use chainhook_sdk::chainhooks::bitcoin::{
     evaluate_bitcoin_chainhooks_on_chain_event, handle_bitcoin_hook_action,
     BitcoinChainhookOccurrence, BitcoinTriggerChainhook,
+    BitcoinChainhookSpecification, BitcoinPredicateType
 };
-use chainhook_sdk::chainhooks::types::{BitcoinChainhookSpecification, BitcoinPredicateType};
 use chainhook_sdk::indexer::bitcoin::{
     build_http_client, download_and_parse_block_with_retry, retrieve_block_hash_with_retry,
     standardize_bitcoin_block,
@@ -198,7 +198,7 @@ async fn execute_predicates_action<'a>(
         if trigger.chainhook.include_proof {
             gather_proofs(&trigger, &mut proofs, &config, &ctx);
         }
-        match handle_bitcoin_hook_action(trigger, &proofs) {
+        match handle_bitcoin_hook_action(trigger, &proofs, &config) {
             Err(e) => {
                 try_error!(ctx, "unable to handle action {}", e);
             }

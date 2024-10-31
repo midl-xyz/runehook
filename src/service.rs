@@ -90,7 +90,7 @@ pub async fn start_service(config: &Config, ctx: &Context) -> Result<(), String>
         .await
         .expect("unable to set up observer sidecar");
     let event_observer_config = config.event_observer.clone();
-    let context = if config.event_observer.display_logs {
+    let context = if config.event_observer.display_stacks_ingestion_logs {
         ctx.clone()
     } else {
         Context::empty()
