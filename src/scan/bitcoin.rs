@@ -3,16 +3,16 @@ use crate::config::Config;
 use crate::db::cache::index_cache::IndexCache;
 use crate::db::index::{index_block, roll_back_block};
 use crate::{try_error, try_info};
+use chainhook_sdk::chainhooks::bitcoin::BitcoinPredicateType;
 use chainhook_sdk::chainhooks::bitcoin::{
     evaluate_bitcoin_chainhooks_on_chain_event, handle_bitcoin_hook_action,
-    BitcoinChainhookOccurrence, BitcoinTriggerChainhook,
+    BitcoinChainhookInstance, BitcoinChainhookOccurrence, BitcoinTriggerChainhook,
 };
-use chainhook_sdk::chainhooks::types::{BitcoinChainhookSpecification, BitcoinPredicateType};
 use chainhook_sdk::indexer::bitcoin::{
     build_http_client, download_and_parse_block_with_retry, retrieve_block_hash_with_retry,
     standardize_bitcoin_block,
 };
-use chainhook_sdk::observer::{gather_proofs, DataHandlerEvent, EventObserverConfig};
+use chainhook_sdk::observer::{gather_proofs, EventObserverConfig};
 use chainhook_sdk::types::{
     BitcoinBlockData, BitcoinChainEvent, BitcoinChainUpdatedWithBlocksData,
 };
@@ -33,7 +33,7 @@ pub async fn scan_blocks(
     index_cache: &mut IndexCache,
     ctx: &Context,
 ) -> Result<(), String> {
-    let predicate = BitcoinChainhookSpecification {
+    let predicate = BitcoinChainhookInstance {
         uuid: format!("runehook-internal-trigger"),
         owner_uuid: None,
         name: format!("runehook-internal-trigger"),
@@ -65,7 +65,7 @@ pub async fn scan_blocks(
 }
 
 pub async fn scan_bitcoin_chainstate_via_rpc_using_predicate(
-    predicate_spec: &BitcoinChainhookSpecification,
+    predicate_spec: &BitcoinChainhookInstance,
     config: &Config,
     event_observer_config_override: Option<&EventObserverConfig>,
     pg_client: &mut Client,
@@ -171,7 +171,7 @@ pub async fn scan_bitcoin_chainstate_via_rpc_using_predicate(
 
 async fn process_block_with_predicates(
     block: BitcoinBlockData,
-    predicates: &Vec<&BitcoinChainhookSpecification>,
+    predicates: &Vec<&BitcoinChainhookInstance>,
     event_observer_config: &EventObserverConfig,
     ctx: &Context,
 ) -> Result<u32, String> {
@@ -198,7 +198,7 @@ async fn execute_predicates_action<'a>(
         if trigger.chainhook.include_proof {
             gather_proofs(&trigger, &mut proofs, &config, &ctx);
         }
-        match handle_bitcoin_hook_action(trigger, &proofs) {
+        match handle_bitcoin_hook_action(trigger, &proofs, &config) {
             Err(e) => {
                 try_error!(ctx, "unable to handle action {}", e);
             }
@@ -211,11 +211,7 @@ async fn execute_predicates_action<'a>(
                     BitcoinChainhookOccurrence::File(path, bytes) => {
                         file_append(path, bytes, &ctx)?
                     }
-                    BitcoinChainhookOccurrence::Data(payload) => {
-                        if let Some(ref tx) = config.data_handler_tx {
-                            let _ = tx.send(DataHandlerEvent::Process(payload));
-                        }
-                    }
+                    BitcoinChainhookOccurrence::Data(_payload) => {}
                 };
             }
         }

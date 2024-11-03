@@ -1,8 +1,8 @@
-use chainhook_sdk::observer::EventObserverConfigOverrides;
+use chainhook_sdk::observer::EventObserverConfigBuilder;
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct ConfigFile {
-    pub network: Option<EventObserverConfigOverrides>,
+    pub network: Option<EventObserverConfigBuilder>,
     pub postgres: PostgresConfigFile,
     pub resources: ResourcesConfigFile,
 }
