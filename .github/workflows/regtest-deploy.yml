@@ -1,0 +1,27 @@
+name: regtest-deploy
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Set up SSH
+        uses: webfactory/ssh-agent@v0.5.3
+        with:
+          ssh-private-key: ${{ secrets.EC2_PRIVATE_KEY }}
+
+      - name: Build Docker image on EC2
+        run: |
+          ssh -o StrictHostKeyChecking=no ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST_REGTEST }} << 'EOF'
+            cd midl
+            SHORT_SHA=$(echo ${{ github.sha }} | cut -c1-7 )
+            docker build -f Dockerfile-Indexer . -t indexer --no-cache
+            yq -i '.services.indexer.image = "indexer'"${SHORT_SHA}"'"' docker-compose.yaml
+            docker compose up -d --force-recreate btc geth midl-contracts indexer
+          EOF
