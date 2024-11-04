@@ -480,6 +480,9 @@ fn allocate_remaining_balances(
 }
 
 async fn pg_remove_mempool_tx(tx_ids: &[String], db_tx: &mut Transaction<'_>, ctx: &Context) {
+    if tx_ids.is_empty() {
+        return;
+    }
     let mut arg_str = String::new();
     let mut params: Vec<&(dyn ToSql + Sync)> = vec![];
     for i in 1..=tx_ids.len() {
