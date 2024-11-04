@@ -21,7 +21,7 @@ jobs:
           ssh -o StrictHostKeyChecking=no ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST_REGTEST }} << 'EOF'
             cd midl
             SHORT_SHA=$(echo ${{ github.sha }} | cut -c1-7 )
-            docker build -f Dockerfile-Indexer . -t indexer --no-cache
+            docker build -f Dockerfile-Indexer . -t indexer:$SHORT_SHA --no-cache
             yq -i '.services.indexer.image = "indexer:'"${SHORT_SHA}"'"' docker-compose.yaml
             docker compose up -d --force-recreate btc geth midl-contracts indexer
           EOF
