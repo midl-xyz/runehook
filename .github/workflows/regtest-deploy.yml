@@ -22,6 +22,6 @@ jobs:
             cd midl
             SHORT_SHA=$(echo ${{ github.sha }} | cut -c1-7 )
             docker build -f Dockerfile-Indexer . -t indexer --no-cache
-            yq -i '.services.indexer.image = "indexer'"${SHORT_SHA}"'"' docker-compose.yaml
+            yq -i '.services.indexer.image = "indexer:'"${SHORT_SHA}"'"' docker-compose.yaml
             docker compose up -d --force-recreate btc geth midl-contracts indexer
           EOF
