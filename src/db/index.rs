@@ -24,7 +24,7 @@ pub fn get_rune_genesis_block_height(network: Network) -> u64 {
         Network::Testnet(TestnetVersion::V3) => 2_539_948,
         Network::Testnet(TestnetVersion::V4) => 1,
         Network::Signet => todo!(),
-        Network::Regtest => todo!(),
+        Network::Regtest => 1,
         _ => todo!(),
     }
 }
