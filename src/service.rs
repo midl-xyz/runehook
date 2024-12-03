@@ -2,11 +2,10 @@ use crate::bitcoind::bitcoind_get_block_height;
 use crate::config::Config;
 use crate::db::cache::index_cache::IndexCache;
 use crate::db::index::{get_rune_genesis_block_height, index_block, roll_back_block};
-use crate::db::{pg_connect, pg_get_block_height};
+use crate::db::{pg_connect, pg_get_last_block_height};
 use crate::mempool::set_up_mempool_sidecar_runloop;
 use crate::scan::bitcoin::scan_blocks;
 use crate::{try_error, try_info};
-use bitcoin::{Network, TestnetVersion};
 use chainhook_sdk::observer::BitcoinBlockDataCached;
 use chainhook_sdk::types::BlockIdentifier;
 use chainhook_sdk::{
@@ -16,14 +15,12 @@ use chainhook_sdk::{
 use crossbeam_channel::{select, Sender};
 use std::sync::mpsc::channel;
 
-const TESTNET_V4: Network = Network::Testnet(TestnetVersion::V4);
-
 pub async fn start_service(config: &Config, ctx: &Context) -> Result<(), String> {
     {
         let mut pg_client = pg_connect(&config, true, ctx).await;
         let mut index_cache = IndexCache::new(config, &mut pg_client, ctx).await;
         loop {
-            let chain_tip = pg_get_block_height(&mut pg_client, ctx)
+            let chain_tip = pg_get_last_block_height(&mut pg_client, ctx)
                 .await
                 .unwrap_or(get_rune_genesis_block_height(config.get_bitcoin_network()) - 1);
             let bitcoind_chain_tip = bitcoind_get_block_height(config, ctx);
@@ -42,30 +39,6 @@ pub async fn start_service(config: &Config, ctx: &Context) -> Result<(), String>
                     chain_tip + 1,
                     bitcoind_chain_tip
                 );
-
-                if config.get_bitcoin_network().eq(&TESTNET_V4) {
-                    let prev_chain_tip = chain_tip;
-
-                    scan_blocks(
-                        ((chain_tip + 1)..=bitcoind_chain_tip).collect(),
-                        config,
-                        &mut pg_client,
-                        &mut index_cache,
-                        ctx,
-                    )
-                    .await?;
-
-                    let chain_tip = pg_get_block_height(&mut pg_client, ctx).await.unwrap();
-
-                    if prev_chain_tip == chain_tip {
-                        try_info!(
-                            ctx,
-                            "Chain tip did not changed. Assume that {} is latest transaction block. It is fine for testnet v4. We are good to go.",
-                            chain_tip
-                        );
-                        break;
-                    }
-                }
 
                 scan_blocks(
                     ((chain_tip + 1)..=bitcoind_chain_tip).collect(),

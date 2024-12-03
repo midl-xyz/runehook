@@ -388,6 +388,19 @@ pub async fn pg_get_block_height(client: &mut Client, _ctx: &Context) -> Option<
     }
 }
 
+pub async fn pg_get_last_block_height(client: &mut Client, _ctx: &Context) -> Option<u64> {
+    let row = client
+        .query_opt("SELECT last_scanned_height as height FROM block_height", &[])
+        .await
+        .expect("error getting max block height")?;
+    let height: Option<PgNumericU64> = row.get("height");
+    if let Some(height) = height {
+        Some(height.0)
+    } else {
+        None
+    }
+}
+
 pub async fn pg_get_rune_by_id(
     id: &RuneId,
     db_tx: &mut Transaction<'_>,

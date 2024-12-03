@@ -83,9 +83,6 @@ pub async fn index_block(
         .await
         .expect("Unable to begin block processing pg transaction");
 
-    // Keep track of the last scanned block height
-    let _ = pg_update_block_height(block_height, &mut db_tx, ctx).await;
-
     index_cache.reset_max_rune_number(&mut db_tx, ctx).await;
     for tx in block.transactions.iter() {
         let (transaction, eligible_outputs, first_eligible_output, total_outputs) =
@@ -151,6 +148,10 @@ pub async fn index_block(
         index_cache.end_transaction(&mut db_tx, ctx);
     }
     index_cache.end_block();
+
+    // Keep track of the last scanned block height
+    let _ = pg_update_block_height(block_height, &mut db_tx, ctx).await;
+
     index_cache.db_cache.flush(&mut db_tx, ctx).await;
     db_tx
         .commit()
