@@ -151,16 +151,25 @@ fn new_zmq_socket() -> Socket {
     let context = zmq::Context::new();
     let socket = context.socket(zmq::SUB).unwrap();
     // watching the raw transaction
+    // Subscribe to raw transaction messages from ZMQ
     assert!(socket.set_subscribe(b"rawtx").is_ok());
+
+    // Set receive high water mark to 0 (unlimited queue size)
     assert!(socket.set_rcvhwm(0).is_ok());
-    // We override the OS default behavior:
+
+    // Enable TCP keepalive with custom settings:
+    // 1. Enable TCP keepalive (1 = on)
     assert!(socket.set_tcp_keepalive(1).is_ok());
-    // The keepalive routine will wait for 5 minutes
-    assert!(socket.set_tcp_keepalive_idle(300).is_ok());
-    // And then resend it every 60 seconds
-    assert!(socket.set_tcp_keepalive_intvl(60).is_ok());
-    // 120 times
-    assert!(socket.set_tcp_keepalive_cnt(120).is_ok());
+
+    // 2. Start sending keepalive probes after 10 minutes (600 seconds) of inactivity
+    assert!(socket.set_tcp_keepalive_idle(600).is_ok());
+
+    // 3. Send keepalive probes every 20 seconds
+    assert!(socket.set_tcp_keepalive_intvl(20).is_ok());
+
+    // 4. Consider connection dead after 15 failed probes
+    // This means connection will be considered dead after ~5 minutes of no response
+    assert!(socket.set_tcp_keepalive_cnt(15).is_ok());
     socket
 }
 
