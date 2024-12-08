@@ -271,7 +271,7 @@ pub async fn scan_mempool(
         config.event_observer.bitcoind_rpc_password.clone(),
     );
     let rpc = new_rpc_client(&config.event_observer.bitcoind_rpc_url, rpc_auth)
-        .expect("Failed to sart an rpc client.");
+        .expect("Failed to start an rpc client.");
 
     let mut db_tx = pg_client
         .transaction()
@@ -293,7 +293,7 @@ pub async fn scan_mempool(
             let difference: Vec<String> = hs.difference(&txs_hs).cloned().collect();
             Ok(difference)
         })
-        .expect("Faielde to get read lock on memcache");
+        .expect("Failed to get read lock on memcache");
 
     pg_remove_mempool_tx(&tx_to_delete, &mut db_tx, &extended_ctx.ctx).await;
 
@@ -504,7 +504,7 @@ async fn pg_remove_mempool_tx(tx_ids: &[String], db_tx: &mut Transaction<'_>, ct
     }
     // Maybe its better idea to keep a batch of tx to delete
     let query_str = format!(
-        "DELETE FROM mempool_ledger WHERE transaction_id IN ({})",
+        "DELETE FROM mempool_ledger WHERE tx_id IN ({})",
         arg_str
     );
     match db_tx.query(&query_str, &params).await {
