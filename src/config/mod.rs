@@ -5,7 +5,7 @@ use bitcoin::{Network, TestnetVersion};
 use chainhook_sdk::observer::EventObserverConfig;
 
 use chainhook_sdk::types::BitcoinNetwork;
-use file::ConfigFile;
+use file::{ConfigFile, LogConfigFile};
 use std::fs::File;
 use std::io::{BufReader, Read};
 
@@ -28,6 +28,7 @@ pub struct Config {
     pub event_observer: EventObserverConfig,
     pub postgres: PostgresConfig,
     pub resources: ResourcesConfig,
+    pub logs_file: LogConfigFile,
 }
 
 impl Config {
@@ -71,6 +72,7 @@ impl Config {
             resources: ResourcesConfig {
                 lru_cache_size: config_file.resources.lru_cache_size.unwrap_or(10_000),
             },
+            logs_file: config_file.logs,
         };
         Ok(config)
     }

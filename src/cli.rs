@@ -130,12 +130,7 @@ struct DropDbCommand {
 }
 
 pub fn main() {
-    let logger = hiro_system_kit::log::setup_logger();
-    let _guard = hiro_system_kit::log::setup_global_logger(logger.clone());
-    let ctx = Context {
-        logger: Some(logger),
-        tracer: false,
-    };
+    let ctx = Context::empty();
 
     let opts: Opts = match Opts::try_parse() {
         Ok(opts) => opts,
@@ -154,7 +149,7 @@ pub fn main() {
     }
 }
 
-async fn handle_command(opts: Opts, ctx: Context) -> Result<(), String> {
+async fn handle_command(opts: Opts, mut ctx: Context) -> Result<(), String> {
     match opts.command {
         Command::Config(ConfigCommand::New(_options)) => {
             use std::fs::File;
@@ -171,6 +166,11 @@ async fn handle_command(opts: Opts, ctx: Context) -> Result<(), String> {
         }
         Command::Service(ServiceCommand::Start(cmd)) => {
             let config = Config::from_file_path(&cmd.config_path)?;
+            if config.logs_file.runes_internals.unwrap_or(false) {
+                let logger = hiro_system_kit::log::setup_logger();
+                let _guard = hiro_system_kit::log::setup_global_logger(logger.clone());
+                ctx.logger = Some(logger);
+            }
             let maintenance_enabled = std::env::var("MAINTENANCE_MODE").unwrap_or("0".into());
             if maintenance_enabled.eq("1") {
                 try_info!(ctx, "Entering maintenance mode. Unset MAINTENANCE_MODE and reboot to resume operations.");
@@ -180,6 +180,11 @@ async fn handle_command(opts: Opts, ctx: Context) -> Result<(), String> {
         }
         Command::Scan(ScanCommand::Start(cmd)) => {
             let config = Config::from_file_path(&cmd.config_path)?;
+            if config.logs_file.runes_internals.unwrap_or(false) {
+                let logger = hiro_system_kit::log::setup_logger();
+                let _guard = hiro_system_kit::log::setup_global_logger(logger.clone());
+                ctx.logger = Some(logger);
+            }
             let blocks = cmd.get_blocks();
             let mut pg_client = pg_connect(&config, true, &ctx).await;
             let mut index_cache = IndexCache::new(&config, &mut pg_client, &ctx).await;
@@ -187,6 +192,11 @@ async fn handle_command(opts: Opts, ctx: Context) -> Result<(), String> {
         }
         Command::Db(DbCommand::Drop(cmd)) => {
             let config = Config::from_file_path(&cmd.config_path)?;
+            if config.logs_file.runes_internals.unwrap_or(false) {
+                let logger = hiro_system_kit::log::setup_logger();
+                let _guard = hiro_system_kit::log::setup_global_logger(logger.clone());
+                ctx.logger = Some(logger);
+            }
             println!(
                 "{} blocks will be deleted. Confirm? [Y/n]",
                 cmd.end_block - cmd.start_block + 1

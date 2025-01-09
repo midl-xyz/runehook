@@ -5,7 +5,9 @@ pub struct ConfigFile {
     pub network: Option<EventObserverConfigBuilder>,
     pub postgres: PostgresConfigFile,
     pub resources: ResourcesConfigFile,
+    pub logs: LogConfigFile,
 }
+
 #[derive(Deserialize, Debug, Clone)]
 pub struct LogConfigFile {
     pub runes_internals: Option<bool>,
