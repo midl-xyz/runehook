@@ -10,7 +10,7 @@ CREATE TABLE IF NOT EXISTS ledger (
     output                  BIGINT,
     address                 TEXT,
     receiver_address        TEXT,
-    amount                  NUMERIC,
+    amount                  TEXT,
     operation               ledger_operation NOT NULL,
     timestamp               BIGINT NOT NULL
 );

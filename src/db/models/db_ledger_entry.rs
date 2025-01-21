@@ -2,7 +2,7 @@ use ordinals::RuneId;
 use tokio_postgres::Row;
 
 use crate::db::types::{
-    pg_bigint_u32::PgBigIntU32, pg_numeric_u128::PgNumericU128, pg_numeric_u64::PgNumericU64,
+    pg_bigint_u32::PgBigIntU32, pg_text_u128::PgTextU128, pg_numeric_u64::PgNumericU64,
 };
 
 use super::db_ledger_operation::DbLedgerOperation;
@@ -19,7 +19,7 @@ pub struct DbLedgerEntry {
     pub output: Option<PgBigIntU32>,
     pub address: Option<String>,
     pub receiver_address: Option<String>,
-    pub amount: Option<PgNumericU128>,
+    pub amount: Option<PgTextU128>,
     pub operation: DbLedgerOperation,
     pub timestamp: PgBigIntU32,
 }
@@ -49,7 +49,7 @@ impl DbLedgerEntry {
             output: output.map(|i| PgBigIntU32(i)),
             address: address.cloned(),
             receiver_address: receiver_address.cloned(),
-            amount: amount.map(|i| PgNumericU128(i)),
+            amount: amount.map(|i| PgTextU128(i)),
             operation,
             timestamp: PgBigIntU32(timestamp),
         }

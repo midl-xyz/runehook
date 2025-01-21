@@ -7,7 +7,7 @@ use crate::db::cache::input_rune_balance::InputRuneBalance;
 
 use crate::db::models::db_ledger_operation::DbLedgerOperation;
 use crate::db::types::pg_bigint_u32::PgBigIntU32;
-use crate::db::types::pg_numeric_u128::PgNumericU128;
+use crate::db::types::pg_text_u128::PgTextU128;
 use crate::db::{pg_connect, pg_get_input_rune_balances};
 use crate::{try_debug, try_error, try_info, try_warn};
 use bitcoin::consensus::deserialize;
@@ -33,7 +33,7 @@ pub struct DBMempoolLedgerEntry {
     pub output: Option<PgBigIntU32>,
     pub address: Option<String>,
     pub receiver_address: Option<String>,
-    pub amount: Option<PgNumericU128>,
+    pub amount: Option<PgTextU128>,
     pub operation: DbLedgerOperation,
 }
 impl DBMempoolLedgerEntry {
@@ -54,7 +54,7 @@ impl DBMempoolLedgerEntry {
             output: output.map(PgBigIntU32),
             address: address.cloned(),
             receiver_address: receiver_address.cloned(),
-            amount: amount.map(PgNumericU128),
+            amount: amount.map(PgTextU128),
             operation,
         }
     }
@@ -503,10 +503,7 @@ async fn pg_remove_mempool_tx(tx_ids: &[String], db_tx: &mut Transaction<'_>, ct
         params.push(tx_id);
     }
     // Maybe its better idea to keep a batch of tx to delete
-    let query_str = format!(
-        "DELETE FROM mempool_ledger WHERE tx_id IN ({})",
-        arg_str
-    );
+    let query_str = format!("DELETE FROM mempool_ledger WHERE tx_id IN ({})", arg_str);
     match db_tx.query(&query_str, &params).await {
         Ok(_) => {}
         Err(e) => {

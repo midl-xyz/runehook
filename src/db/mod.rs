@@ -9,9 +9,7 @@ use models::{
 use ordinals::RuneId;
 use refinery::embed_migrations;
 use tokio_postgres::{types::ToSql, Client, Error, GenericClient, NoTls, Transaction};
-use types::{
-    pg_bigint_u32::PgBigIntU32, pg_numeric_u128::PgNumericU128, pg_numeric_u64::PgNumericU64,
-};
+use types::{pg_bigint_u32::PgBigIntU32, pg_numeric_u64::PgNumericU64, pg_text_u128::PgTextU128};
 
 use crate::{config::Config, try_error, try_info};
 
@@ -145,68 +143,114 @@ pub async fn pg_insert_supply_changes(
     ctx: &Context,
 ) -> Result<bool, Error> {
     for chunk in rows.chunks(500) {
-        let mut arg_num = 1;
-        let mut arg_str = String::new();
-        let mut params: Vec<&(dyn ToSql + Sync)> = vec![];
-        for row in chunk.iter() {
-            arg_str.push_str(
-                format!(
-                    "(${},${}::numeric,${}::numeric,${}::numeric,${}::numeric,${}::numeric,${}::numeric),",
-                    arg_num,
-                    arg_num + 1,
-                    arg_num + 2,
-                    arg_num + 3,
-                    arg_num + 4,
-                    arg_num + 5,
-                    arg_num + 6
-                )
-                .as_str(),
-            );
-            arg_num += 7;
-            params.push(&row.rune_id);
-            params.push(&row.block_height);
-            params.push(&row.minted);
-            params.push(&row.total_mints);
-            params.push(&row.burned);
-            params.push(&row.total_burns);
-            params.push(&row.total_operations);
-        }
-        arg_str.pop();
-        match db_tx
+        let rune_ids: Vec<&String> = rows.iter().map(|row| &row.rune_id).collect();
+
+        // Fetch the latest supply_changes for each rune_id
+        let previous_records: Vec<DbSupplyChange> = db_tx
             .query(
-                &format!("
-                WITH changes (rune_id, block_height, minted, total_mints, burned, total_burns, total_operations) AS (VALUES {}),
-                previous AS (
-                    SELECT DISTINCT ON (rune_id) *
-                    FROM supply_changes
-                    WHERE rune_id IN (SELECT rune_id FROM changes)
-                    ORDER BY rune_id, block_height DESC
-                ),
-                inserts AS (
-                    SELECT c.rune_id,
-                        c.block_height,
-                        COALESCE(p.minted, 0) + c.minted AS minted,
-                        COALESCE(p.total_mints, 0) + c.total_mints AS total_mints,
-                        COALESCE(p.burned, 0) + c.burned AS burned,
-                        COALESCE(p.total_burns, 0) + c.total_burns AS total_burns,
-                        COALESCE(p.total_operations, 0) + c.total_operations AS total_operations
-                    FROM changes AS c
-                    LEFT JOIN previous AS p ON c.rune_id = p.rune_id
-                )
-                INSERT INTO supply_changes (rune_id, block_height, minted, total_mints, burned, total_burns, total_operations)
-                (SELECT * FROM inserts)
-                ON CONFLICT (rune_id, block_height) DO UPDATE SET
-                    minted = EXCLUDED.minted,
-                    total_mints = EXCLUDED.total_mints,
-                    burned = EXCLUDED.burned,
-                    total_burns = EXCLUDED.total_burns,
-                    total_operations = EXCLUDED.total_operations
-                ", arg_str),
-                &params,
+                "SELECT * FROM (
+                SELECT DISTINCT ON (rune_id) *
+                FROM supply_changes
+                WHERE rune_id = ANY($1::text[])
+                ORDER BY rune_id, block_height DESC
+            ) sub",
+                &[&rune_ids],
             )
-            .await
-        {
-            Ok(_) => {}
+            .await?
+            .iter()
+            .map(|row| DbSupplyChange {
+                // Assuming SupplyChange is a struct that matches the table schema
+                // Replace with actual field mappings
+                rune_id: row.get("rune_id"),
+                block_height: row.get("block_height"),
+                minted: row.get("minted"),
+                total_mints: row.get("total_mints"),
+                burned: row.get("burned"),
+                total_burns: row.get("total_burns"),
+                total_operations: row.get("total_operations"),
+            })
+            .collect();
+
+        // Create a map from rune_id to previous record
+        let prev_map: HashMap<String, DbSupplyChange> = previous_records
+            .into_iter()
+            .map(|rec| (rec.rune_id.clone(), rec))
+            .collect();
+
+        // Group input rows by rune_id and sum the changes
+        let mut changes_map: HashMap<String, DbSupplyChange> = HashMap::new();
+        for row in rows {
+            changes_map.insert(
+                row.rune_id.clone(),
+                DbSupplyChange {
+                    rune_id: row.rune_id.clone(),
+                    block_height: row.block_height,
+                    minted: row.minted,
+                    total_mints: row.total_mints,
+                    burned: row.burned,
+                    total_burns: row.total_burns,
+                    total_operations: row.total_operations,
+                },
+            );
+
+            if let Some(prev_row) = prev_map.get(&row.rune_id) {
+                changes_map
+                    .entry(row.rune_id.clone())
+                    .and_modify(|db_supply_change| {
+                        db_supply_change.minted += prev_row.minted;
+                        db_supply_change.total_mints += prev_row.total_mints;
+                        db_supply_change.burned += prev_row.burned;
+                        db_supply_change.total_burns += prev_row.total_burns;
+                        db_supply_change.total_operations += prev_row.total_operations;
+                    });
+            }
+        }
+
+        let changes_chunk = changes_map.values();
+
+        let mut insert_args: Vec<&(dyn ToSql + Sync)> = Vec::with_capacity(changes_chunk.len() * 7);
+        let placeholders: String = (0..changes_chunk.len())
+            .map(|i| {
+                let base = i * 7;
+                format!(
+                    "(${}, ${}, ${}, ${}, ${}, ${}, ${})",
+                    base + 1,
+                    base + 2,
+                    base + 3,
+                    base + 4,
+                    base + 5,
+                    base + 6,
+                    base + 7
+                )
+            })
+            .collect::<Vec<String>>()
+            .join(", ");
+
+        for rec in changes_chunk {
+            insert_args.push(&rec.rune_id);
+            insert_args.push(&rec.block_height);
+            insert_args.push(&rec.minted);
+            insert_args.push(&rec.total_mints);
+            insert_args.push(&rec.burned);
+            insert_args.push(&rec.total_burns);
+            insert_args.push(&rec.total_operations);
+        }
+
+        match db_tx.query(
+            &format!(
+                "INSERT INTO supply_changes (rune_id, block_height, minted, total_mints, burned, total_burns, total_operations)
+                 VALUES {} 
+                 ON CONFLICT (rune_id, block_height) DO UPDATE SET
+                     minted = EXCLUDED.minted,
+                     total_mints = EXCLUDED.total_mints,
+                     burned = EXCLUDED.burned,
+                     total_burns = EXCLUDED.total_burns,
+                     total_operations = EXCLUDED.total_operations",
+                placeholders
+            ),
+            &insert_args,
+        ).await {
+            Ok(_) => (),
             Err(e) => {
                 try_error!(ctx, "Error inserting supply changes: {:?}", e);
                 process::exit(1);
@@ -222,58 +266,114 @@ pub async fn pg_insert_balance_changes(
     db_tx: &mut Transaction<'_>,
     ctx: &Context,
 ) -> Result<bool, Error> {
-    let sign = if increase { "+" } else { "-" };
     for chunk in rows.chunks(500) {
-        let mut arg_num = 1;
-        let mut arg_str = String::new();
-        let mut params: Vec<&(dyn ToSql + Sync)> = vec![];
-        for row in chunk.iter() {
-            arg_str.push_str(
-                format!(
-                    "(${},${}::numeric,${},${}::numeric,${}::bigint),",
-                    arg_num,
-                    arg_num + 1,
-                    arg_num + 2,
-                    arg_num + 3,
-                    arg_num + 4
-                )
-                .as_str(),
+        let pairs: Vec<_> = rows
+            .iter()
+            .map(|row| (&row.rune_id, &row.address))
+            .collect();
+
+        let (rune_ids, addresses): (Vec<&String>, Vec<&String>) = pairs.into_iter().unzip();
+        let previous_records = db_tx
+            .query(
+                "SELECT DISTINCT ON (rune_id, address) *
+             FROM balance_changes
+             WHERE (rune_id, address) IN (
+                 SELECT rune_id, address 
+                 FROM unnest($1::text[], $2::text[]) AS t(rune_id, address)
+             )
+             ORDER BY rune_id, address, block_height DESC",
+                &[&rune_ids, &addresses],
+            )
+            .await?
+            .iter()
+            .map(|row| DbBalanceChange {
+                rune_id: row.get("rune_id"),
+                address: row.get("address"),
+                block_height: row.get("block_height"),
+                balance: row.get("balance"),
+                total_operations: row.get("total_operations"),
+            })
+            .collect::<Vec<_>>();
+
+        let prev_map: HashMap<(String, String), DbBalanceChange> = previous_records
+            .into_iter()
+            .map(|rec| ((rec.rune_id.clone(), rec.address.clone()), rec))
+            .collect();
+
+        // Group input rows by rune_id and sum the changes
+        let mut changes_map: HashMap<(String, String), DbBalanceChange> = HashMap::new();
+        for row in chunk {
+            let cur_key = (row.rune_id.clone(), row.address.clone());
+            changes_map.insert(
+                cur_key.clone(),
+                DbBalanceChange {
+                    rune_id: row.rune_id.clone(),
+                    address: row.address.clone(),
+                    block_height: row.block_height,
+                    balance: row.balance,
+                    total_operations: row.total_operations,
+                },
             );
-            arg_num += 5;
-            params.push(&row.rune_id);
-            params.push(&row.block_height);
-            params.push(&row.address);
-            params.push(&row.balance);
-            params.push(&row.total_operations);
+
+            let prev_key = (row.rune_id.clone(), row.address.clone());
+            if let Some(prev_row) = prev_map.get(&prev_key) {
+                changes_map.entry(cur_key).and_modify(|db_balance_change| {
+                    if increase {
+                        db_balance_change.balance += prev_row.balance;
+                    } else {
+                        let mut sub_balance = prev_row.balance;
+                        sub_balance -= row.balance;
+                        db_balance_change.balance = sub_balance;
+                    }
+                    db_balance_change.total_operations += prev_row.total_operations;
+                });
+            }
         }
-        arg_str.pop();
+
+        let changes_chunk = changes_map.values();
+
+        let mut insert_args: Vec<&(dyn ToSql + Sync)> = Vec::with_capacity(changes_chunk.len() * 5);
+        let placeholders: String = (0..changes_chunk.len())
+            .map(|i| {
+                let base = i * 5;
+                format!(
+                    "(${}, ${}, ${}, ${}, ${})",
+                    base + 1,
+                    base + 2,
+                    base + 3,
+                    base + 4,
+                    base + 5,
+                )
+            })
+            .collect::<Vec<String>>()
+            .join(", ");
+
+        for rec in changes_chunk {
+            insert_args.push(&rec.rune_id);
+            insert_args.push(&rec.block_height);
+            insert_args.push(&rec.address);
+            insert_args.push(&rec.balance);
+            insert_args.push(&rec.total_operations);
+        }
+
         match db_tx
             .query(
-                &format!("WITH changes (rune_id, block_height, address, balance, total_operations) AS (VALUES {}),
-                previous AS (
-                    SELECT DISTINCT ON (rune_id, address) *
-                    FROM balance_changes
-                    WHERE (rune_id, address) IN (SELECT rune_id, address FROM changes)
-                    ORDER BY rune_id, address, block_height DESC
+                &format!(
+                    "INSERT INTO balance_changes 
+                        (rune_id, block_height, address, balance, total_operations)
+                    VALUES {}
+                    ON CONFLICT (rune_id, block_height, address) DO UPDATE SET
+                        balance = EXCLUDED.balance,
+                        total_operations = EXCLUDED.total_operations",
+                    placeholders
                 ),
-                inserts AS (
-                    SELECT c.rune_id, c.block_height, c.address, COALESCE(p.balance, 0) {} c.balance AS balance,
-                        COALESCE(p.total_operations, 0) + c.total_operations AS total_operations
-                    FROM changes AS c
-                    LEFT JOIN previous AS p ON c.rune_id = p.rune_id AND c.address = p.address
-                )
-                INSERT INTO balance_changes (rune_id, block_height, address, balance, total_operations)
-                (SELECT * FROM inserts)
-                ON CONFLICT (rune_id, block_height, address) DO UPDATE SET
-                    balance = EXCLUDED.balance,
-                    total_operations = EXCLUDED.total_operations", arg_str, sign),
-                &params,
+                &insert_args,
             )
             .await
         {
-            Ok(_) => {}
+            Ok(_) => (),
             Err(e) => {
-                try_error!(ctx, "Error inserting balance changes: {:?}", e);
+                try_error!(ctx, "Error inserting supply changes: {:?}", e);
                 process::exit(1);
             }
         };
@@ -390,7 +490,10 @@ pub async fn pg_get_block_height(client: &mut Client, _ctx: &Context) -> Option<
 
 pub async fn pg_get_last_block_height(client: &mut Client, _ctx: &Context) -> Option<u64> {
     let row = client
-        .query_opt("SELECT last_scanned_height as height FROM block_height", &[])
+        .query_opt(
+            "SELECT last_scanned_height as height FROM block_height",
+            &[],
+        )
         .await
         .expect("error getting max block height")?;
     let height: Option<PgNumericU64> = row.get("height");
@@ -447,7 +550,7 @@ pub async fn pg_get_rune_total_mints(
     let Some(row) = row else {
         return None;
     };
-    let minted: PgNumericU128 = row.get("total_mints");
+    let minted: PgTextU128 = row.get("total_mints");
     Some(minted.0)
 }
 
@@ -514,7 +617,7 @@ pub async fn pg_get_input_rune_balances(
         let rune_str: String = row.get("rune_id");
         let rune_id = RuneId::from_str(rune_str.as_str()).unwrap();
         let address: Option<String> = row.get("address");
-        let amount: PgNumericU128 = row.get("amount");
+        let amount: PgTextU128 = row.get("amount");
         let input_bal = InputRuneBalance {
             address,
             amount: amount.0,

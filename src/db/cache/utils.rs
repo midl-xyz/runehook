@@ -592,7 +592,7 @@ mod test {
         use crate::db::{
             cache::{transaction_location::TransactionLocation, utils::is_rune_mintable},
             models::db_rune::DbRune,
-            types::{pg_numeric_u128::PgNumericU128, pg_numeric_u64::PgNumericU64},
+            types::{pg_text_u128::PgTextU128, pg_numeric_u64::PgNumericU64},
         };
 
         #[test_case(840000 => false; "early block")]
@@ -628,7 +628,7 @@ mod test {
         #[test_case(50 => false; "out of range")]
         fn mint_cap_is_validated(cap: u128) -> bool {
             let mut rune = DbRune::factory();
-            rune.terms_cap(Some(PgNumericU128(50)));
+            rune.terms_cap(Some(PgTextU128(50)));
             is_rune_mintable(&rune, cap, &TransactionLocation::dummy())
         }
     }

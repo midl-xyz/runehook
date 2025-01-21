@@ -1,39 +1,39 @@
-use crate::db::types::{pg_numeric_u128::PgNumericU128, pg_numeric_u64::PgNumericU64};
+use crate::db::types::{pg_numeric_u64::PgNumericU64, pg_text_u128::PgTextU128};
 
 /// An update to a rune that affects its total counts.
 #[derive(Debug, Clone)]
 pub struct DbSupplyChange {
     pub rune_id: String,
     pub block_height: PgNumericU64,
-    pub minted: PgNumericU128,
-    pub total_mints: PgNumericU128,
-    pub burned: PgNumericU128,
-    pub total_burns: PgNumericU128,
-    pub total_operations: PgNumericU128,
+    pub minted: PgTextU128,
+    pub total_mints: PgTextU128,
+    pub burned: PgTextU128,
+    pub total_burns: PgTextU128,
+    pub total_operations: PgTextU128,
 }
 
 impl DbSupplyChange {
-    pub fn from_mint(id: String, block_height: PgNumericU64, amount: PgNumericU128) -> Self {
+    pub fn from_mint(id: String, block_height: PgNumericU64, amount: PgTextU128) -> Self {
         DbSupplyChange {
             rune_id: id,
             block_height,
             minted: amount,
-            total_mints: PgNumericU128(1),
-            burned: PgNumericU128(0),
-            total_burns: PgNumericU128(0),
-            total_operations: PgNumericU128(1),
+            total_mints: PgTextU128(1),
+            burned: PgTextU128(0),
+            total_burns: PgTextU128(0),
+            total_operations: PgTextU128(1),
         }
     }
 
-    pub fn from_burn(id: String, block_height: PgNumericU64, amount: PgNumericU128) -> Self {
+    pub fn from_burn(id: String, block_height: PgNumericU64, amount: PgTextU128) -> Self {
         DbSupplyChange {
             rune_id: id,
             block_height,
-            minted: PgNumericU128(0),
-            total_mints: PgNumericU128(0),
+            minted: PgTextU128(0),
+            total_mints: PgTextU128(0),
             burned: amount,
-            total_burns: PgNumericU128(1),
-            total_operations: PgNumericU128(1),
+            total_burns: PgTextU128(1),
+            total_operations: PgTextU128(1),
         }
     }
 
@@ -41,11 +41,11 @@ impl DbSupplyChange {
         DbSupplyChange {
             rune_id: id,
             block_height,
-            minted: PgNumericU128(0),
-            total_mints: PgNumericU128(0),
-            burned: PgNumericU128(0),
-            total_burns: PgNumericU128(0),
-            total_operations: PgNumericU128(1),
+            minted: PgTextU128(0),
+            total_mints: PgTextU128(0),
+            burned: PgTextU128(0),
+            total_burns: PgTextU128(0),
+            total_operations: PgTextU128(1),
         }
     }
 }

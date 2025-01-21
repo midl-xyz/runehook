@@ -5,7 +5,7 @@ CREATE TABLE IF NOT EXISTS mempool_ledger (
     output                  BIGINT,
     address                 TEXT,
     receiver_address        TEXT,
-    amount                  NUMERIC,
+    amount                  TEXT,
     operation               ledger_operation NOT NULL
 );
 

@@ -4,8 +4,8 @@ use tokio_postgres::Row;
 use crate::db::{
     cache::transaction_location::TransactionLocation,
     types::{
-        pg_bigint_u32::PgBigIntU32, pg_numeric_u128::PgNumericU128, pg_numeric_u64::PgNumericU64,
-        pg_smallint_u8::PgSmallIntU8,
+        pg_bigint_u32::PgBigIntU32, pg_numeric_u64::PgNumericU64, pg_smallint_u8::PgSmallIntU8,
+        pg_text_u128::PgTextU128,
     },
 };
 
@@ -21,10 +21,10 @@ pub struct DbRune {
     pub tx_index: PgBigIntU32,
     pub tx_id: String,
     pub divisibility: PgSmallIntU8,
-    pub premine: PgNumericU128,
+    pub premine: PgTextU128,
     pub symbol: String,
-    pub terms_amount: Option<PgNumericU128>,
-    pub terms_cap: Option<PgNumericU128>,
+    pub terms_amount: Option<PgTextU128>,
+    pub terms_cap: Option<PgTextU128>,
     pub terms_height_start: Option<PgNumericU64>,
     pub terms_height_end: Option<PgNumericU64>,
     pub terms_offset_start: Option<PgNumericU64>,
@@ -53,8 +53,8 @@ impl DbRune {
         let mut terms_offset_start = None;
         let mut terms_offset_end = None;
         if let Some(terms) = etching.terms {
-            terms_amount = terms.amount.map(|i| PgNumericU128(i));
-            terms_cap = terms.cap.map(|i| PgNumericU128(i));
+            terms_amount = terms.amount.map(|i| PgTextU128(i));
+            terms_cap = terms.cap.map(|i| PgTextU128(i));
             terms_height_start = terms.height.0.map(|i| PgNumericU64(i));
             terms_height_end = terms.height.1.map(|i| PgNumericU64(i));
             terms_offset_start = terms.offset.0.map(|i| PgNumericU64(i));
@@ -75,8 +75,8 @@ impl DbRune {
                 .unwrap_or(PgSmallIntU8(0)),
             premine: etching
                 .premine
-                .map(|i| PgNumericU128(i))
-                .unwrap_or(PgNumericU128(0)),
+                .map(|i| PgTextU128(i))
+                .unwrap_or(PgTextU128(0)),
             symbol: etching
                 .symbol
                 .map(|i| i.to_string().replace('\0', ""))
@@ -104,7 +104,7 @@ impl DbRune {
             tx_index: PgBigIntU32(location.tx_index),
             tx_id: location.tx_id[2..].to_string(),
             divisibility: PgSmallIntU8(0),
-            premine: PgNumericU128(0),
+            premine: PgTextU128(0),
             symbol: "".to_string(),
             terms_amount: None,
             terms_cap: None,
@@ -165,10 +165,10 @@ impl DbRune {
             tx_index: PgBigIntU32(1),
             tx_id: "2bb85f4b004be6da54f766c17c1e855187327112c231ef2ff35ebad0ea67c69e".to_string(),
             divisibility: PgSmallIntU8(2),
-            premine: PgNumericU128(11000000000),
+            premine: PgTextU128(11000000000),
             symbol: "ᚠ".to_string(),
-            terms_amount: Some(PgNumericU128(100)),
-            terms_cap: Some(PgNumericU128(1111111)),
+            terms_amount: Some(PgTextU128(100)),
+            terms_cap: Some(PgTextU128(1111111)),
             terms_height_start: None,
             terms_height_end: None,
             terms_offset_start: None,
@@ -199,7 +199,7 @@ impl DbRune {
         self
     }
 
-    pub fn terms_cap(&mut self, val: Option<PgNumericU128>) -> &Self {
+    pub fn terms_cap(&mut self, val: Option<PgTextU128>) -> &Self {
         self.terms_cap = val;
         self
     }

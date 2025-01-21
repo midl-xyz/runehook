@@ -35,6 +35,12 @@ impl<'a> FromSql<'a> for PgBigIntU32 {
     }
 }
 
+impl AddAssign for PgBigIntU32 {
+    fn add_assign(&mut self, other: Self) {
+        self.0 += other.0;
+    }
+}
+
 impl AddAssign<u32> for PgBigIntU32 {
     fn add_assign(&mut self, other: u32) {
         self.0 += other;
