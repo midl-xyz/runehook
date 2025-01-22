@@ -5,7 +5,7 @@ use crate::db::index::{get_rune_genesis_block_height, index_block, roll_back_blo
 use crate::db::{pg_connect, pg_get_last_block_height};
 use crate::mempool::set_up_mempool_sidecar_runloop;
 use crate::scan::bitcoin::scan_blocks;
-use crate::{try_error, try_info};
+use crate::{try_debug, try_error, try_info};
 use chainhook_sdk::observer::BitcoinBlockDataCached;
 use chainhook_sdk::types::BlockIdentifier;
 use chainhook_sdk::{
@@ -14,6 +14,7 @@ use chainhook_sdk::{
 };
 use crossbeam_channel::{select, Sender};
 use std::sync::mpsc::channel;
+use std::time::Duration;
 
 pub async fn start_service(config: &Config, ctx: &Context) -> Result<(), String> {
     {
@@ -146,6 +147,8 @@ pub async fn set_up_observer_sidecar_runloop(
                             // We don't need to do anything here because we already indexed the block during the mutation above.
                         }
                     }
+                    // if no action for more than 20 min – log
+                    default(Duration::from_secs(20 * 60)) => try_debug!(ctx, "No events in observer runloop for more than 20 min"),
                 }
             }
         });

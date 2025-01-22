@@ -85,6 +85,11 @@ pub async fn index_block(
 
     index_cache.reset_max_rune_number(&mut db_tx, ctx).await;
     for tx in block.transactions.iter() {
+        try_info!(
+            ctx,
+            "Started processing transaction with id: {}",
+            &tx.transaction_identifier.hash
+        );
         let (transaction, eligible_outputs, first_eligible_output, total_outputs) =
             bitcoin_tx_from_chainhook_tx(block, tx);
         let tx_index = tx.metadata.index;
@@ -145,8 +150,10 @@ pub async fn index_block(
                 }
             }
         }
+        try_info!(ctx, "Finished processing transaction");
         index_cache.end_transaction(&mut db_tx, ctx);
     }
+    try_info!(ctx, "Finished processing block");
     index_cache.end_block();
 
     // Keep track of the last scanned block height
