@@ -20,10 +20,13 @@ pub async fn start_service(config: &Config, ctx: &Context) -> Result<(), String>
     {
         let mut pg_client = pg_connect(&config, true, ctx).await;
         let mut index_cache = IndexCache::new(config, &mut pg_client, ctx).await;
+        let rune_genesis_block_height =
+            get_rune_genesis_block_height(config.get_bitcoin_network()) - 1;
         loop {
             let chain_tip = pg_get_last_block_height(&mut pg_client, ctx)
                 .await
-                .unwrap_or(get_rune_genesis_block_height(config.get_bitcoin_network()) - 1);
+                .unwrap_or(0)
+                .max(rune_genesis_block_height);
             let bitcoind_chain_tip = bitcoind_get_block_height(config, ctx);
             if bitcoind_chain_tip < chain_tip {
                 try_info!(
@@ -148,7 +151,9 @@ pub async fn set_up_observer_sidecar_runloop(
                         }
                     }
                     // if no action for more than 20 min – log
-                    default(Duration::from_secs(20 * 60)) => try_debug!(ctx, "No events in observer runloop for more than 20 min"),
+                    default(Duration::from_secs(20 * 60)) => {
+                        try_debug!(ctx, "No events in observer runloop for more than 20 min");
+                    },
                 }
             }
         });

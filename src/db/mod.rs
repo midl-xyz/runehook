@@ -143,7 +143,7 @@ pub async fn pg_insert_supply_changes(
     ctx: &Context,
 ) -> Result<bool, Error> {
     for chunk in rows.chunks(500) {
-        let rune_ids: Vec<&String> = rows.iter().map(|row| &row.rune_id).collect();
+        let rune_ids: Vec<&String> = chunk.iter().map(|row| &row.rune_id).collect();
 
         // Fetch the latest supply_changes for each rune_id
         let previous_records: Vec<DbSupplyChange> = db_tx
@@ -179,7 +179,7 @@ pub async fn pg_insert_supply_changes(
 
         // Group input rows by rune_id and sum the changes
         let mut changes_map: HashMap<String, DbSupplyChange> = HashMap::new();
-        for row in rows {
+        for row in chunk {
             changes_map.insert(
                 row.rune_id.clone(),
                 DbSupplyChange {
@@ -267,7 +267,7 @@ pub async fn pg_insert_balance_changes(
     ctx: &Context,
 ) -> Result<bool, Error> {
     for chunk in rows.chunks(500) {
-        let pairs: Vec<_> = rows
+        let pairs: Vec<_> = chunk
             .iter()
             .map(|row| (&row.rune_id, &row.address))
             .collect();
