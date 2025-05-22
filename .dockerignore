@@ -2,3 +2,5 @@ target/
 dockerfiles/
 .dockerignore
 *.tar.gz
+.vscode
+.github
