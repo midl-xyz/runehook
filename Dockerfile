@@ -3,8 +3,8 @@ WORKDIR /app
 COPY . .
 RUN cargo runehook-install
 
-FROM alpine:latest
-RUN apk add --no-cache ca-certificates
+FROM debian:bullseye-slim
+RUN apt update && apt install -y ca-certificates
 WORKDIR /app
 COPY --from=build /app/target/release/runehook /bin/runehook
 CMD ["runehook"]
