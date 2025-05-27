@@ -20,7 +20,11 @@ jobs:
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
-
+      - name: Set short git commit SHA
+        id: vars
+        run: |
+          calculatedSha=$(git rev-parse --short ${{ github.sha }})
+          echo "SHORT_SHA=$calculatedSha" >> $GITHUB_ENV
       - name: Build and push
         id: docker_build
         uses: docker/build-push-action@v6
@@ -28,6 +32,9 @@ jobs:
           context: ./api
           file: ./api/Dockerfile
           push: true
+          build-args: |
+            GIT_BRANCH=${{ github.ref_name }}
+            GIT_COMMIT=${{ env.SHORT_SHA }}
           tags: |
             ${{ steps.login-ecr.outputs.registry }}/${{ github.repository }}-api:latest
             ${{ steps.login-ecr.outputs.registry }}/${{ github.repository }}-api:${{ github.sha }}
