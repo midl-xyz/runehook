@@ -311,6 +311,11 @@ const RuneDetailResponseSchema = Type.Object({
       number: RuneNumberResponseSchema,
       name: RuneNameResponseSchema,
       spaced_name: RuneSpacedNameResponseSchema,
+      divisibility: Type.Integer({
+        title: 'Divisibility',
+        description: 'Rune decimal places',
+        examples: [2],
+      }),
     },
     { title: 'Rune detail', description: 'Details of the rune affected by this activity' }
   ),
